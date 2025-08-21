@@ -57,6 +57,8 @@ server = SecureFastMCP(
     auth=None,
 )
 
+server.streamable_http_app()
+
 # Add the AuthInfo middleware to inject authentication into FastMCP context
 auth_info_middleware = AuthInfoMiddleware()
 server.add_middleware(auth_info_middleware)
@@ -159,6 +161,7 @@ async def oauth2_callback(request: Request) -> HTMLResponse:
             session_id=None
         )
 
+        logger.info(f"Credentials: token={credentials.token}")
         logger.info(f"OAuth callback: Successfully authenticated user: {verified_user_id}.")
 
         try:
