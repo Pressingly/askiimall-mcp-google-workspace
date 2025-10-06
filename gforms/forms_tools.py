@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 @require_google_service("forms", "forms")
 async def create_form(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     title: str,
     description: Optional[str] = None,
     document_title: Optional[str] = None
@@ -70,7 +70,7 @@ async def create_form(
 @require_google_service("forms", "forms")
 async def get_form(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     form_id: str
 ) -> str:
     """
@@ -126,7 +126,7 @@ async def get_form(
 @require_google_service("forms", "forms")
 async def set_publish_settings(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     form_id: str,
     publish_as_template: bool = False,
     require_authentication: bool = False
@@ -164,7 +164,7 @@ async def set_publish_settings(
 @require_google_service("forms", "forms")
 async def get_form_response(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     form_id: str,
     response_id: str
 ) -> str:
@@ -218,7 +218,7 @@ async def get_form_response(
 @require_google_service("forms", "forms")
 async def list_form_responses(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     form_id: str,
     page_size: int = 10,
     page_token: Optional[str] = None

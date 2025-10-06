@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 @require_google_service("drive", "drive_read")
 async def list_spreadsheets(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     max_results: int = 25,
 ) -> str:
     """
@@ -73,7 +73,7 @@ async def list_spreadsheets(
 @require_google_service("sheets", "sheets_read")
 async def get_spreadsheet_info(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     spreadsheet_id: str,
 ) -> str:
     """
@@ -123,7 +123,7 @@ async def get_spreadsheet_info(
 @require_google_service("sheets", "sheets_read")
 async def read_sheet_values(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     spreadsheet_id: str,
     range_name: str = "A1:Z1000",
 ) -> str:
@@ -173,7 +173,7 @@ async def read_sheet_values(
 @require_google_service("sheets", "sheets_write")
 async def modify_sheet_values(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     spreadsheet_id: str,
     range_name: str,
     values: Optional[Union[str, List[List[str]]]] = None,
@@ -261,7 +261,7 @@ async def modify_sheet_values(
 @require_google_service("sheets", "sheets_write")
 async def create_spreadsheet(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     title: str,
     sheet_names: Optional[List[str]] = None,
 ) -> str:
@@ -310,7 +310,7 @@ async def create_spreadsheet(
 @require_google_service("sheets", "sheets_write")
 async def create_sheet(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     spreadsheet_id: str,
     sheet_name: str,
 ) -> str:

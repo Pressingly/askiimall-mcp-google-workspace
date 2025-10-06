@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 @require_google_service("drive", "drive_read")
 async def search_docs(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     query: str,
     page_size: int = 10,
 ) -> str:
@@ -93,7 +93,7 @@ async def search_docs(
 async def get_doc_content(
     drive_service,
     docs_service,
-    user_google_email: str = "me",
+    user_google_email: str,
     document_id: str,
 ) -> str:
     """
@@ -248,7 +248,7 @@ async def get_doc_content(
 @require_google_service("drive", "drive_read")
 async def list_docs_in_folder(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     folder_id: str = 'root',
     page_size: int = 100
 ) -> str:
@@ -280,7 +280,7 @@ async def list_docs_in_folder(
 @require_google_service("docs", "docs_write")
 async def create_doc(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     title: str,
     content: str = '',
 ) -> str:
@@ -308,7 +308,7 @@ async def create_doc(
 @require_google_service("docs", "docs_write")
 async def modify_doc_text(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     document_id: str,
     start_index: int,
     end_index: int = None,
@@ -446,7 +446,7 @@ async def modify_doc_text(
 @require_google_service("docs", "docs_write")
 async def find_and_replace_doc(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     document_id: str,
     find_text: str,
     replace_text: str,
@@ -492,7 +492,7 @@ async def find_and_replace_doc(
 @require_google_service("docs", "docs_write")
 async def insert_doc_elements(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     document_id: str,
     element_type: str,
     index: int,
@@ -574,7 +574,7 @@ async def insert_doc_elements(
 async def insert_doc_image(
     docs_service,
     drive_service,
-    user_google_email: str = "me",
+    user_google_email: str,
     document_id: str,
     image_source: str,
     index: int,
@@ -649,7 +649,7 @@ async def insert_doc_image(
 @require_google_service("docs", "docs_write")
 async def update_doc_headers_footers(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     document_id: str,
     section_type: str,
     content: str,
@@ -703,7 +703,7 @@ async def update_doc_headers_footers(
 @require_google_service("docs", "docs_write")
 async def batch_update_doc(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     document_id: str,
     operations: list,
 ) -> str:
@@ -759,7 +759,7 @@ async def batch_update_doc(
 @require_google_service("docs", "docs_read")
 async def inspect_doc_structure(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     document_id: str,
     detailed: bool = False,
 ) -> str:
@@ -875,7 +875,7 @@ async def inspect_doc_structure(
 @require_google_service("docs", "docs_write")
 async def create_table_with_data(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     document_id: str,
     table_data: list,
     index: int,
@@ -969,7 +969,7 @@ async def create_table_with_data(
 @require_google_service("docs", "docs_read")
 async def debug_table_structure(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     document_id: str,
     table_index: int = 0,
 ) -> str:

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 @handle_http_errors("list_task_lists", service_type="tasks")
 async def list_task_lists(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     max_results: Optional[int] = None,
     page_token: Optional[str] = None
 ) -> str:
@@ -82,7 +82,7 @@ async def list_task_lists(
 @handle_http_errors("get_task_list", service_type="tasks")
 async def get_task_list(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     task_list_id: str
 ) -> str:
     """
@@ -126,7 +126,7 @@ async def get_task_list(
 @handle_http_errors("create_task_list", service_type="tasks")
 async def create_task_list(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     title: str
 ) -> str:
     """
@@ -174,7 +174,7 @@ async def create_task_list(
 @handle_http_errors("update_task_list", service_type="tasks")
 async def update_task_list(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     task_list_id: str,
     title: str
 ) -> str:
@@ -224,7 +224,7 @@ async def update_task_list(
 @handle_http_errors("delete_task_list", service_type="tasks")
 async def delete_task_list(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     task_list_id: str
 ) -> str:
     """
@@ -264,7 +264,7 @@ async def delete_task_list(
 @handle_http_errors("list_tasks", service_type="tasks")
 async def list_tasks(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     task_list_id: str,
     max_results: Optional[int] = None,
     page_token: Optional[str] = None,
@@ -370,7 +370,7 @@ async def list_tasks(
 @handle_http_errors("get_task", service_type="tasks")
 async def get_task(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     task_list_id: str,
     task_id: str
 ) -> str:
@@ -431,7 +431,7 @@ async def get_task(
 @handle_http_errors("create_task", service_type="tasks")
 async def create_task(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     task_list_id: str,
     title: str,
     notes: Optional[str] = None,
@@ -506,7 +506,7 @@ async def create_task(
 @handle_http_errors("update_task", service_type="tasks")
 async def update_task(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     task_list_id: str,
     task_id: str,
     title: Optional[str] = None,
@@ -588,7 +588,7 @@ async def update_task(
 @handle_http_errors("delete_task", service_type="tasks")
 async def delete_task(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     task_list_id: str,
     task_id: str
 ) -> str:
@@ -630,7 +630,7 @@ async def delete_task(
 @handle_http_errors("move_task", service_type="tasks")
 async def move_task(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     task_list_id: str,
     task_id: str,
     parent: Optional[str] = None,
@@ -709,7 +709,7 @@ async def move_task(
 @handle_http_errors("clear_completed_tasks", service_type="tasks")
 async def clear_completed_tasks(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     task_list_id: str
 ) -> str:
     """

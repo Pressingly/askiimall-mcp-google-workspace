@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 @handle_http_errors("list_spaces", service_type="chat")
 async def list_spaces(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     page_size: int = 100,
     space_type: str = "all"  # "all", "room", "dm"
 ) -> str:
@@ -66,7 +66,7 @@ async def list_spaces(
 @handle_http_errors("get_messages", service_type="chat")
 async def get_messages(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     space_id: str,
     page_size: int = 50,
     order_by: str = "createTime desc"
@@ -116,7 +116,7 @@ async def get_messages(
 @handle_http_errors("send_message", service_type="chat")
 async def send_message(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     space_id: str,
     message_text: str,
     thread_key: Optional[str] = None
@@ -157,7 +157,7 @@ async def send_message(
 @handle_http_errors("search_messages", service_type="chat")
 async def search_messages(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     query: str,
     space_id: Optional[str] = None,
     page_size: int = 25

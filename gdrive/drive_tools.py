@@ -78,7 +78,7 @@ def _build_drive_list_params(
 @require_google_service("drive", "drive_read")
 async def search_drive_files(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     query: str,
     page_size: int = 10,
     drive_id: Optional[str] = None,
@@ -145,7 +145,7 @@ async def search_drive_files(
 @require_google_service("drive", "drive_read")
 async def get_drive_file_content(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     file_id: str,
 ) -> str:
     """
@@ -235,7 +235,7 @@ async def get_drive_file_content(
 @require_google_service("drive", "drive_read")
 async def list_drive_items(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     folder_id: str = 'root',
     page_size: int = 100,
     drive_id: Optional[str] = None,
@@ -291,7 +291,7 @@ async def list_drive_items(
 @require_google_service("drive", "drive_file")
 async def create_drive_file(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     file_name: str,
     content: Optional[str] = None,  # Now explicitly Optional
     folder_id: str = 'root',

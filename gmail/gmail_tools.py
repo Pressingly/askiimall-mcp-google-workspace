@@ -277,7 +277,7 @@ def _format_gmail_results_plain(messages: list, query: str) -> str:
 @handle_http_errors("search_gmail_messages", is_read_only=True, service_type="gmail")
 @require_google_service("gmail", "gmail_read")
 async def search_gmail_messages(
-    service, query: str, user_google_email: str = "me", page_size: int = 10
+    service, query: str, user_google_email: str, page_size: int = 10
 ) -> str:
     """
     Searches messages in a user's Gmail account based on a query.
@@ -397,7 +397,7 @@ async def get_gmail_message_content(
 async def get_gmail_messages_content_batch(
     service,
     message_ids: List[str],
-    user_google_email: str = "me",
+    user_google_email: str,
     format: Literal["full", "metadata"] = "full",
 ) -> str:
     """
@@ -570,7 +570,7 @@ async def get_gmail_messages_content_batch(
 @require_google_service("gmail", GMAIL_SEND_SCOPE)
 async def send_gmail_message(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     to: str = Body(..., description="Recipient email address."),
     subject: str = Body(..., description="Email subject."),
     body: str = Body(..., description="Email body (plain text)."),
@@ -655,7 +655,7 @@ async def send_gmail_message(
 @require_google_service("gmail", GMAIL_COMPOSE_SCOPE)
 async def draft_gmail_message(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     subject: str = Body(..., description="Email subject."),
     body: str = Body(..., description="Email body (plain text)."),
     to: Optional[str] = Body(None, description="Optional recipient email address."),
@@ -845,7 +845,7 @@ async def get_gmail_thread_content(
 async def get_gmail_threads_content_batch(
     service,
     thread_ids: List[str],
-    user_google_email: str = "me",
+    user_google_email: str,
 ) -> str:
     """
     Retrieves the content of multiple Gmail threads in a single batch request.
@@ -949,7 +949,7 @@ async def get_gmail_threads_content_batch(
 @server.tool()
 @handle_http_errors("list_gmail_labels", is_read_only=True, service_type="gmail")
 @require_google_service("gmail", "gmail_read")
-async def list_gmail_labels(service, user_google_email: str = "me") -> str:
+async def list_gmail_labels(service, user_google_email: str) -> str:
     """
     Lists all labels in the user's Gmail account.
 
@@ -999,7 +999,7 @@ async def list_gmail_labels(service, user_google_email: str = "me") -> str:
 @require_google_service("gmail", GMAIL_LABELS_SCOPE)
 async def manage_gmail_label(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     action: Literal["create", "update", "delete"],
     name: Optional[str] = None,
     label_id: Optional[str] = None,
@@ -1078,7 +1078,7 @@ async def manage_gmail_label(
 @require_google_service("gmail", GMAIL_MODIFY_SCOPE)
 async def modify_gmail_message_labels(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     message_id: str,
     add_label_ids: List[str] = Field(default=[], description="Label IDs to add to the message."),
     remove_label_ids: List[str] = Field(default=[], description="Label IDs to remove from the message."),
@@ -1130,7 +1130,7 @@ async def modify_gmail_message_labels(
 @require_google_service("gmail", GMAIL_MODIFY_SCOPE)
 async def batch_modify_gmail_message_labels(
     service,
-    user_google_email: str = "me",
+    user_google_email: str,
     message_ids: List[str],
     add_label_ids: List[str] = Field(default=[], description="Label IDs to add to messages."),
     remove_label_ids: List[str] = Field(default=[], description="Label IDs to remove from messages."),
