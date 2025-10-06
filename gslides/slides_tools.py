@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 @require_google_service("slides", "slides")
 async def create_presentation(
     service,
-    user_google_email: str,
+    user_google_email: str = "me",
     title: str = "Untitled Presentation"
 ) -> str:
     """
@@ -63,7 +63,7 @@ async def create_presentation(
 @require_google_service("slides", "slides_read")
 async def get_presentation(
     service,
-    user_google_email: str,
+    user_google_email: str = "me",
     presentation_id: str
 ) -> str:
     """
@@ -111,7 +111,7 @@ Slides Breakdown:
 @require_google_service("slides", "slides")
 async def batch_update_presentation(
     service,
-    user_google_email: str,
+    user_google_email: str = "me",
     presentation_id: str,
     requests: List[Dict[str, Any]]
 ) -> str:
@@ -168,7 +168,7 @@ async def batch_update_presentation(
 @require_google_service("slides", "slides_read")
 async def get_page(
     service,
-    user_google_email: str,
+    user_google_email: str = "me",
     presentation_id: str,
     page_object_id: str
 ) -> str:
@@ -230,7 +230,7 @@ Page Elements:
 @require_google_service("slides", "slides_read")
 async def get_page_thumbnail(
     service,
-    user_google_email: str,
+    user_google_email: str = "me",
     presentation_id: str,
     page_object_id: str,
     thumbnail_size: str = "MEDIUM"

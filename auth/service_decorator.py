@@ -407,7 +407,7 @@ def require_google_service(
 
     Usage:
         @require_google_service("gmail", "gmail_read")
-        async def search_messages(service, user_google_email: str, query: str):
+        async def search_messages(service, user_google_email: str = "me", query: str):
             # service parameter is automatically injected
             # Original authentication logic is handled automatically
     """
@@ -547,7 +547,7 @@ def require_multiple_services(service_configs: List[Dict[str, Any]]):
             {"service_type": "drive", "scopes": "drive_read", "param_name": "drive_service"},
             {"service_type": "docs", "scopes": "docs_read", "param_name": "docs_service"}
         ])
-        async def get_doc_with_metadata(drive_service, docs_service, user_google_email: str, doc_id: str):
+        async def get_doc_with_metadata(drive_service, docs_service, user_google_email: str = "me", doc_id: str):
             # Both services are automatically injected
     """
 

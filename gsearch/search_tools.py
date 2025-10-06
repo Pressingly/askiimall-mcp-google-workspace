@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 @require_google_service("customsearch", "customsearch")
 async def search_custom(
     service,
-    user_google_email: str,
+    user_google_email: str = "me",
     q: str,
     num: int = 10,
     start: int = 1,
@@ -220,7 +220,7 @@ async def get_search_engine_info(
 @require_google_service("customsearch", "customsearch")
 async def search_custom_siterestrict(
     service,
-    user_google_email: str,
+    user_google_email: str = "me",
     q: str,
     sites: List[str],
     num: int = 10,
