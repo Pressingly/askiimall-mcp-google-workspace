@@ -437,6 +437,8 @@ def require_google_service(
             bound_args.apply_defaults()
             user_google_email = bound_args.arguments.get("user_google_email")
 
+            user_google_email = user_google_email or 'me'
+
             if not user_google_email:
                 # This should ideally not be reached if 'user_google_email' is a required parameter
                 raise Exception(
