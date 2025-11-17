@@ -554,6 +554,17 @@ def require_multiple_services(service_configs: List[Dict[str, Any]]):
     """
 
     def decorator(func: Callable) -> Callable:
+        original_sig = inspect.signature(func)
+        params = list(original_sig.parameters.values())
+        
+        # Get all service parameter names from config
+        service_param_names = {config["param_name"] for config in service_configs}
+        
+        # Create a new signature excluding service parameters
+        # This is the signature that FastMCP will see
+        filtered_params = [p for p in params if p.name not in service_param_names]
+        wrapper_sig = original_sig.replace(parameters=filtered_params)
+        
         @wraps(func)
         async def wrapper(*args, **kwargs):
             # Extract user_google_email
@@ -643,6 +654,15 @@ def require_multiple_services(service_configs: List[Dict[str, Any]]):
                     e, user_google_email, "Multiple Services"
                 )
                 raise Exception(error_message)
+
+        # Set the wrapper's signature to the one without service parameters
+        wrapper.__signature__ = wrapper_sig
+        
+        # Conditionally modify docstring to remove user_google_email parameter documentation
+        if is_oauth21_enabled():
+            logger.debug('OAuth 2.1 mode enabled, removing user_google_email from docstring')
+            if func.__doc__:
+                wrapper.__doc__ = _remove_user_email_arg_from_docstring(func.__doc__)
 
         return wrapper
 

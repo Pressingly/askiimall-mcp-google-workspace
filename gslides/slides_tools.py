@@ -8,6 +8,7 @@ import logging
 import asyncio
 from typing import List, Dict, Any
 
+from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.server import server
@@ -22,15 +23,15 @@ logger = logging.getLogger(__name__)
 @require_google_service("slides", "slides")
 async def create_presentation(
     service,
-    user_google_email: str,
-    title: str = "Untitled Presentation"
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    title: str = Field("Untitled Presentation", description="The title for the new presentation. Defaults to 'Untitled Presentation'."),
 ) -> str:
     """
     Create a new Google Slides presentation.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        title (str): The title for the new presentation. Defaults to "Untitled Presentation".
+        user_google_email: The user's Google email address.
+        title: The title for the new presentation. Defaults to 'Untitled Presentation'.
 
     Returns:
         str: Details about the created presentation including ID and URL.
@@ -63,15 +64,15 @@ async def create_presentation(
 @require_google_service("slides", "slides_read")
 async def get_presentation(
     service,
-    user_google_email: str,
-    presentation_id: str
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    presentation_id: str = Field(..., description="The ID of the presentation to retrieve. Obtain this from the presentation's edit URL (https://docs.google.com/presentation/d/{presentation_id}/edit) or from presentation creation results."),
 ) -> str:
     """
     Get details about a Google Slides presentation.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        presentation_id (str): The ID of the presentation to retrieve.
+        user_google_email: The user's Google email address.
+        presentation_id: The ID of the presentation to retrieve. Obtain this from the presentation's edit URL or from presentation creation results.
 
     Returns:
         str: Details about the presentation including title, slides count, and metadata.
@@ -111,17 +112,17 @@ Slides Breakdown:
 @require_google_service("slides", "slides")
 async def batch_update_presentation(
     service,
-    user_google_email: str,
-    presentation_id: str,
-    requests: List[Dict[str, Any]]
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    presentation_id: str = Field(..., description="The ID of the presentation to update. Obtain this from the presentation's edit URL or from presentation creation results."),
+    requests: List[Dict[str, Any]] = Field(..., description="List of update requests to apply. Each request is a dictionary containing the operation type and parameters. Supported operations include creating slides, shapes, tables, inserting text, etc."),
 ) -> str:
     """
     Apply batch updates to a Google Slides presentation.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        presentation_id (str): The ID of the presentation to update.
-        requests (List[Dict[str, Any]]): List of update requests to apply.
+        user_google_email: The user's Google email address.
+        presentation_id: The ID of the presentation to update. Obtain this from the presentation's edit URL or from presentation creation results.
+        requests: List of update requests to apply. Each request is a dictionary containing the operation type and parameters. Supported operations include creating slides, shapes, tables, inserting text, etc.
 
     Returns:
         str: Details about the batch update operation results.
@@ -168,17 +169,17 @@ async def batch_update_presentation(
 @require_google_service("slides", "slides_read")
 async def get_page(
     service,
-    user_google_email: str,
-    presentation_id: str,
-    page_object_id: str
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    presentation_id: str = Field(..., description="The ID of the presentation. Obtain this from the presentation's edit URL or from presentation creation results."),
+    page_object_id: str = Field(..., description="The object ID of the page/slide to retrieve. Obtain this from get_presentation results which lists all slides with their object IDs."),
 ) -> str:
     """
     Get details about a specific page (slide) in a presentation.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        presentation_id (str): The ID of the presentation.
-        page_object_id (str): The object ID of the page/slide to retrieve.
+        user_google_email: The user's Google email address.
+        presentation_id: The ID of the presentation. Obtain this from the presentation's edit URL or from presentation creation results.
+        page_object_id: The object ID of the page/slide to retrieve. Obtain this from get_presentation results which lists all slides with their object IDs.
 
     Returns:
         str: Details about the specific page including elements and layout.
@@ -230,19 +231,19 @@ Page Elements:
 @require_google_service("slides", "slides_read")
 async def get_page_thumbnail(
     service,
-    user_google_email: str,
-    presentation_id: str,
-    page_object_id: str,
-    thumbnail_size: str = "MEDIUM"
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    presentation_id: str = Field(..., description="The ID of the presentation. Obtain this from the presentation's edit URL or from presentation creation results."),
+    page_object_id: str = Field(..., description="The object ID of the page/slide. Obtain this from get_presentation results which lists all slides with their object IDs."),
+    thumbnail_size: str = Field("MEDIUM", description="Size of thumbnail. Options: 'LARGE' (largest size), 'MEDIUM' (medium size), 'SMALL' (smallest size). Defaults to 'MEDIUM'."),
 ) -> str:
     """
     Generate a thumbnail URL for a specific page (slide) in a presentation.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        presentation_id (str): The ID of the presentation.
-        page_object_id (str): The object ID of the page/slide.
-        thumbnail_size (str): Size of thumbnail ("LARGE", "MEDIUM", "SMALL"). Defaults to "MEDIUM".
+        user_google_email: The user's Google email address.
+        presentation_id: The ID of the presentation. Obtain this from the presentation's edit URL or from presentation creation results.
+        page_object_id: The object ID of the page/slide. Obtain this from get_presentation results which lists all slides with their object IDs.
+        thumbnail_size: Size of thumbnail. Options: 'LARGE' (largest size), 'MEDIUM' (medium size), 'SMALL' (smallest size). Defaults to 'MEDIUM'.
 
     Returns:
         str: URL to the generated thumbnail image.

@@ -9,6 +9,7 @@ import asyncio
 from typing import Optional
 
 from googleapiclient.errors import HttpError
+from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.server import server
@@ -22,17 +23,17 @@ logger = logging.getLogger(__name__)
 @handle_http_errors("list_task_lists", service_type="tasks")
 async def list_task_lists(
     service,
-    user_google_email: str,
-    max_results: Optional[int] = None,
-    page_token: Optional[str] = None
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    max_results: Optional[int] = Field(None, description="Maximum number of task lists to return. Defaults to 1000, maximum is 1000."),
+    page_token: Optional[str] = Field(None, description="Token for retrieving the next page of results. Use the 'next_page_token' from the previous response to get more results."),
 ) -> str:
     """
     List all task lists for the user.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        max_results (Optional[int]): Maximum number of task lists to return (default: 1000, max: 1000).
-        page_token (Optional[str]): Token for pagination.
+        user_google_email: The user's Google email address.
+        max_results: Maximum number of task lists to return. Defaults to 1000, maximum is 1000.
+        page_token: Token for retrieving the next page of results. Use the 'next_page_token' from the previous response to get more results.
 
     Returns:
         str: List of task lists with their IDs, titles, and details.
@@ -82,15 +83,15 @@ async def list_task_lists(
 @handle_http_errors("get_task_list", service_type="tasks")
 async def get_task_list(
     service,
-    user_google_email: str,
-    task_list_id: str
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    task_list_id: str = Field(..., description="The ID of the task list to retrieve. Obtain this from list_task_lists results."),
 ) -> str:
     """
     Get details of a specific task list.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list to retrieve.
+        user_google_email: The user's Google email address.
+        task_list_id: The ID of the task list to retrieve. Obtain this from list_task_lists results.
 
     Returns:
         str: Task list details including title, ID, and last updated time.
@@ -126,15 +127,15 @@ async def get_task_list(
 @handle_http_errors("create_task_list", service_type="tasks")
 async def create_task_list(
     service,
-    user_google_email: str,
-    title: str
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    title: str = Field(..., description="The title of the new task list."),
 ) -> str:
     """
     Create a new task list.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        title (str): The title of the new task list.
+        user_google_email: The user's Google email address.
+        title: The title of the new task list.
 
     Returns:
         str: Confirmation message with the new task list ID and details.
@@ -174,17 +175,17 @@ async def create_task_list(
 @handle_http_errors("update_task_list", service_type="tasks")
 async def update_task_list(
     service,
-    user_google_email: str,
-    task_list_id: str,
-    title: str
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    task_list_id: str = Field(..., description="The ID of the task list to update. Obtain this from list_task_lists results."),
+    title: str = Field(..., description="The new title for the task list."),
 ) -> str:
     """
     Update an existing task list.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list to update.
-        title (str): The new title for the task list.
+        user_google_email: The user's Google email address.
+        task_list_id: The ID of the task list to update. Obtain this from list_task_lists results.
+        title: The new title for the task list.
 
     Returns:
         str: Confirmation message with updated task list details.
@@ -224,15 +225,15 @@ async def update_task_list(
 @handle_http_errors("delete_task_list", service_type="tasks")
 async def delete_task_list(
     service,
-    user_google_email: str,
-    task_list_id: str
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    task_list_id: str = Field(..., description="The ID of the task list to delete. Obtain this from list_task_lists results. WARNING: This will also delete all tasks in the list."),
 ) -> str:
     """
     Delete a task list. Note: This will also delete all tasks in the list.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list to delete.
+        user_google_email: The user's Google email address.
+        task_list_id: The ID of the task list to delete. Obtain this from list_task_lists results. WARNING: This will also delete all tasks in the list.
 
     Returns:
         str: Confirmation message.
@@ -264,37 +265,37 @@ async def delete_task_list(
 @handle_http_errors("list_tasks", service_type="tasks")
 async def list_tasks(
     service,
-    user_google_email: str,
-    task_list_id: str,
-    max_results: Optional[int] = None,
-    page_token: Optional[str] = None,
-    show_completed: Optional[bool] = None,
-    show_deleted: Optional[bool] = None,
-    show_hidden: Optional[bool] = None,
-    show_assigned: Optional[bool] = None,
-    completed_max: Optional[str] = None,
-    completed_min: Optional[str] = None,
-    due_max: Optional[str] = None,
-    due_min: Optional[str] = None,
-    updated_min: Optional[str] = None
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    task_list_id: str = Field(..., description="The ID of the task list to retrieve tasks from. Obtain this from list_task_lists results."),
+    max_results: Optional[int] = Field(None, description="Maximum number of tasks to return. Defaults to 20, maximum is 100."),
+    page_token: Optional[str] = Field(None, description="Token for retrieving the next page of results. Use the 'next_page_token' from the previous response to get more results."),
+    show_completed: Optional[bool] = Field(None, description="Whether to include completed tasks. If True, includes completed tasks. If False, excludes them. If None, uses default (True)."),
+    show_deleted: Optional[bool] = Field(None, description="Whether to include deleted tasks. If True, includes deleted tasks. If False, excludes them. If None, uses default (False)."),
+    show_hidden: Optional[bool] = Field(None, description="Whether to include hidden tasks. If True, includes hidden tasks. If False, excludes them. If None, uses default (False)."),
+    show_assigned: Optional[bool] = Field(None, description="Whether to include assigned tasks. If True, includes assigned tasks. If False, excludes them. If None, uses default (False)."),
+    completed_max: Optional[str] = Field(None, description="Upper bound for completion date in RFC 3339 timestamp format (e.g., '2024-12-31T23:59:59Z'). Only tasks completed before this date will be returned."),
+    completed_min: Optional[str] = Field(None, description="Lower bound for completion date in RFC 3339 timestamp format (e.g., '2024-01-01T00:00:00Z'). Only tasks completed after this date will be returned."),
+    due_max: Optional[str] = Field(None, description="Upper bound for due date in RFC 3339 timestamp format (e.g., '2024-12-31T23:59:59Z'). Only tasks with due dates before this date will be returned."),
+    due_min: Optional[str] = Field(None, description="Lower bound for due date in RFC 3339 timestamp format (e.g., '2024-01-01T00:00:00Z'). Only tasks with due dates after this date will be returned."),
+    updated_min: Optional[str] = Field(None, description="Lower bound for last modification time in RFC 3339 timestamp format (e.g., '2024-01-01T00:00:00Z'). Only tasks modified after this time will be returned."),
 ) -> str:
     """
     List all tasks in a specific task list.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list to retrieve tasks from.
-        max_results (Optional[int]): Maximum number of tasks to return (default: 20, max: 100).
-        page_token (Optional[str]): Token for pagination.
-        show_completed (Optional[bool]): Whether to include completed tasks (default: True).
-        show_deleted (Optional[bool]): Whether to include deleted tasks (default: False).
-        show_hidden (Optional[bool]): Whether to include hidden tasks (default: False).
-        show_assigned (Optional[bool]): Whether to include assigned tasks (default: False).
-        completed_max (Optional[str]): Upper bound for completion date (RFC 3339 timestamp).
-        completed_min (Optional[str]): Lower bound for completion date (RFC 3339 timestamp).
-        due_max (Optional[str]): Upper bound for due date (RFC 3339 timestamp).
-        due_min (Optional[str]): Lower bound for due date (RFC 3339 timestamp).
-        updated_min (Optional[str]): Lower bound for last modification time (RFC 3339 timestamp).
+        user_google_email: The user's Google email address.
+        task_list_id: The ID of the task list to retrieve tasks from. Obtain this from list_task_lists results.
+        max_results: Maximum number of tasks to return. Defaults to 20, maximum is 100.
+        page_token: Token for retrieving the next page of results. Use the 'next_page_token' from the previous response to get more results.
+        show_completed: Whether to include completed tasks. If True, includes completed tasks. If False, excludes them. If None, uses default (True).
+        show_deleted: Whether to include deleted tasks. If True, includes deleted tasks. If False, excludes them. If None, uses default (False).
+        show_hidden: Whether to include hidden tasks. If True, includes hidden tasks. If False, excludes them. If None, uses default (False).
+        show_assigned: Whether to include assigned tasks. If True, includes assigned tasks. If False, excludes them. If None, uses default (False).
+        completed_max: Upper bound for completion date in RFC 3339 timestamp format. Only tasks completed before this date will be returned.
+        completed_min: Lower bound for completion date in RFC 3339 timestamp format. Only tasks completed after this date will be returned.
+        due_max: Upper bound for due date in RFC 3339 timestamp format. Only tasks with due dates before this date will be returned.
+        due_min: Lower bound for due date in RFC 3339 timestamp format. Only tasks with due dates after this date will be returned.
+        updated_min: Lower bound for last modification time in RFC 3339 timestamp format. Only tasks modified after this time will be returned.
 
     Returns:
         str: List of tasks with their details.
@@ -370,17 +371,17 @@ async def list_tasks(
 @handle_http_errors("get_task", service_type="tasks")
 async def get_task(
     service,
-    user_google_email: str,
-    task_list_id: str,
-    task_id: str
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    task_list_id: str = Field(..., description="The ID of the task list containing the task. Obtain this from list_task_lists results."),
+    task_id: str = Field(..., description="The ID of the task to retrieve. Obtain this from list_tasks results."),
 ) -> str:
     """
     Get details of a specific task.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list containing the task.
-        task_id (str): The ID of the task to retrieve.
+        user_google_email: The user's Google email address.
+        task_list_id: The ID of the task list containing the task. Obtain this from list_task_lists results.
+        task_id: The ID of the task to retrieve. Obtain this from list_tasks results.
 
     Returns:
         str: Task details including title, notes, status, due date, etc.
@@ -431,25 +432,25 @@ async def get_task(
 @handle_http_errors("create_task", service_type="tasks")
 async def create_task(
     service,
-    user_google_email: str,
-    task_list_id: str,
-    title: str,
-    notes: Optional[str] = None,
-    due: Optional[str] = None,
-    parent: Optional[str] = None,
-    previous: Optional[str] = None
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    task_list_id: str = Field(..., description="The ID of the task list to create the task in. Obtain this from list_task_lists results."),
+    title: str = Field(..., description="The title of the task."),
+    notes: Optional[str] = Field(None, description="Notes or description for the task."),
+    due: Optional[str] = Field(None, description="Due date in RFC 3339 timestamp format (e.g., '2024-12-31T23:59:59Z' or '2024-12-31')."),
+    parent: Optional[str] = Field(None, description="Parent task ID to make this task a subtask. Obtain the parent task ID from list_tasks results."),
+    previous: Optional[str] = Field(None, description="Previous sibling task ID for positioning. The new task will be inserted after this task. Obtain the previous task ID from list_tasks results."),
 ) -> str:
     """
     Create a new task in a task list.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list to create the task in.
-        title (str): The title of the task.
-        notes (Optional[str]): Notes/description for the task.
-        due (Optional[str]): Due date in RFC 3339 format (e.g., "2024-12-31T23:59:59Z").
-        parent (Optional[str]): Parent task ID (for subtasks).
-        previous (Optional[str]): Previous sibling task ID (for positioning).
+        user_google_email: The user's Google email address.
+        task_list_id: The ID of the task list to create the task in. Obtain this from list_task_lists results.
+        title: The title of the task.
+        notes: Notes or description for the task.
+        due: Due date in RFC 3339 timestamp format (e.g., '2024-12-31T23:59:59Z' or '2024-12-31').
+        parent: Parent task ID to make this task a subtask. Obtain the parent task ID from list_tasks results.
+        previous: Previous sibling task ID for positioning. The new task will be inserted after this task. Obtain the previous task ID from list_tasks results.
 
     Returns:
         str: Confirmation message with the new task ID and details.
@@ -506,25 +507,25 @@ async def create_task(
 @handle_http_errors("update_task", service_type="tasks")
 async def update_task(
     service,
-    user_google_email: str,
-    task_list_id: str,
-    task_id: str,
-    title: Optional[str] = None,
-    notes: Optional[str] = None,
-    status: Optional[str] = None,
-    due: Optional[str] = None
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    task_list_id: str = Field(..., description="The ID of the task list containing the task. Obtain this from list_task_lists results."),
+    task_id: str = Field(..., description="The ID of the task to update. Obtain this from list_tasks results."),
+    title: Optional[str] = Field(None, description="New title for the task. If not provided, the existing title is preserved."),
+    notes: Optional[str] = Field(None, description="New notes or description for the task. If not provided, the existing notes are preserved."),
+    status: Optional[str] = Field(None, description="New status for the task. Options: 'needsAction' (task is not completed), 'completed' (task is completed). If not provided, the existing status is preserved."),
+    due: Optional[str] = Field(None, description="New due date in RFC 3339 timestamp format (e.g., '2024-12-31T23:59:59Z' or '2024-12-31'). If not provided, the existing due date is preserved."),
 ) -> str:
     """
     Update an existing task.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list containing the task.
-        task_id (str): The ID of the task to update.
-        title (Optional[str]): New title for the task.
-        notes (Optional[str]): New notes/description for the task.
-        status (Optional[str]): New status ("needsAction" or "completed").
-        due (Optional[str]): New due date in RFC 3339 format.
+        user_google_email: The user's Google email address.
+        task_list_id: The ID of the task list containing the task. Obtain this from list_task_lists results.
+        task_id: The ID of the task to update. Obtain this from list_tasks results.
+        title: New title for the task. If not provided, the existing title is preserved.
+        notes: New notes or description for the task. If not provided, the existing notes are preserved.
+        status: New status for the task. Options: 'needsAction' (task is not completed), 'completed' (task is completed). If not provided, the existing status is preserved.
+        due: New due date in RFC 3339 timestamp format (e.g., '2024-12-31T23:59:59Z' or '2024-12-31'). If not provided, the existing due date is preserved.
 
     Returns:
         str: Confirmation message with updated task details.
@@ -588,17 +589,17 @@ async def update_task(
 @handle_http_errors("delete_task", service_type="tasks")
 async def delete_task(
     service,
-    user_google_email: str,
-    task_list_id: str,
-    task_id: str
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    task_list_id: str = Field(..., description="The ID of the task list containing the task. Obtain this from list_task_lists results."),
+    task_id: str = Field(..., description="The ID of the task to delete. Obtain this from list_tasks results."),
 ) -> str:
     """
     Delete a task from a task list.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list containing the task.
-        task_id (str): The ID of the task to delete.
+        user_google_email: The user's Google email address.
+        task_list_id: The ID of the task list containing the task. Obtain this from list_task_lists results.
+        task_id: The ID of the task to delete. Obtain this from list_tasks results.
 
     Returns:
         str: Confirmation message.
@@ -630,23 +631,23 @@ async def delete_task(
 @handle_http_errors("move_task", service_type="tasks")
 async def move_task(
     service,
-    user_google_email: str,
-    task_list_id: str,
-    task_id: str,
-    parent: Optional[str] = None,
-    previous: Optional[str] = None,
-    destination_task_list: Optional[str] = None
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    task_list_id: str = Field(..., description="The ID of the current task list containing the task. Obtain this from list_task_lists results."),
+    task_id: str = Field(..., description="The ID of the task to move. Obtain this from list_tasks results."),
+    parent: Optional[str] = Field(None, description="New parent task ID to make this task a subtask. Obtain the parent task ID from list_tasks results. If not provided, the task remains at the top level."),
+    previous: Optional[str] = Field(None, description="Previous sibling task ID for positioning. The task will be moved to appear after this task. Obtain the previous task ID from list_tasks results. If not provided, the task is moved to the end."),
+    destination_task_list: Optional[str] = Field(None, description="Destination task list ID for moving the task to a different list. Obtain this from list_task_lists results. If not provided, the task stays in the current list."),
 ) -> str:
     """
     Move a task to a different position or parent within the same list, or to a different list.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the current task list containing the task.
-        task_id (str): The ID of the task to move.
-        parent (Optional[str]): New parent task ID (for making it a subtask).
-        previous (Optional[str]): Previous sibling task ID (for positioning).
-        destination_task_list (Optional[str]): Destination task list ID (for moving between lists).
+        user_google_email: The user's Google email address.
+        task_list_id: The ID of the current task list containing the task. Obtain this from list_task_lists results.
+        task_id: The ID of the task to move. Obtain this from list_tasks results.
+        parent: New parent task ID to make this task a subtask. Obtain the parent task ID from list_tasks results. If not provided, the task remains at the top level.
+        previous: Previous sibling task ID for positioning. The task will be moved to appear after this task. Obtain the previous task ID from list_tasks results. If not provided, the task is moved to the end.
+        destination_task_list: Destination task list ID for moving the task to a different list. Obtain this from list_task_lists results. If not provided, the task stays in the current list.
 
     Returns:
         str: Confirmation message with updated task details.
@@ -709,15 +710,15 @@ async def move_task(
 @handle_http_errors("clear_completed_tasks", service_type="tasks")
 async def clear_completed_tasks(
     service,
-    user_google_email: str,
-    task_list_id: str
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    task_list_id: str = Field(..., description="The ID of the task list to clear completed tasks from. Obtain this from list_task_lists results. WARNING: All completed tasks will be marked as hidden."),
 ) -> str:
     """
     Clear all completed tasks from a task list. The tasks will be marked as hidden.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list to clear completed tasks from.
+        user_google_email: The user's Google email address.
+        task_list_id: The ID of the task list to clear completed tasks from. Obtain this from list_task_lists results. WARNING: All completed tasks will be marked as hidden.
 
     Returns:
         str: Confirmation message.

@@ -9,6 +9,8 @@ import asyncio
 import os
 from typing import Optional, List, Literal
 
+from pydantic import Field
+
 from auth.service_decorator import require_google_service
 from core.server import server
 from core.utils import handle_http_errors
@@ -21,35 +23,35 @@ logger = logging.getLogger(__name__)
 @require_google_service("customsearch", "customsearch")
 async def search_custom(
     service,
-    user_google_email: str,
-    q: str,
-    num: int = 10,
-    start: int = 1,
-    safe: Literal["active", "moderate", "off"] = "off",
-    search_type: Optional[Literal["image"]] = None,
-    site_search: Optional[str] = None,
-    site_search_filter: Optional[Literal["e", "i"]] = None,
-    date_restrict: Optional[str] = None,
-    file_type: Optional[str] = None,
-    language: Optional[str] = None,
-    country: Optional[str] = None
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    q: str = Field(..., description="The search query string."),
+    num: int = Field(10, description="Number of results to return. Must be between 1 and 10. Defaults to 10."),
+    start: int = Field(1, description="The index of the first result to return (1-based). Use this for pagination. Defaults to 1."),
+    safe: Literal["active", "moderate", "off"] = Field("off", description="Safe search level. Options: 'active' (strict filtering), 'moderate' (moderate filtering), 'off' (no filtering). Defaults to 'off'."),
+    search_type: Optional[Literal["image"]] = Field(None, description="Search type. If set to 'image', searches for images. If None, performs a regular web search."),
+    site_search: Optional[str] = Field(None, description="Restrict search to a specific site or domain. Example: 'example.com' or '*.edu'."),
+    site_search_filter: Optional[Literal["e", "i"]] = Field(None, description="Filter for site_search. Options: 'e' (exclude site_search results), 'i' (include only site_search results). Only used when site_search is provided."),
+    date_restrict: Optional[str] = Field(None, description="Restrict results by date. Examples: 'd5' (past 5 days), 'w2' (past 2 weeks), 'm3' (past 3 months), 'y1' (past year)."),
+    file_type: Optional[str] = Field(None, description="Filter by file type. Examples: 'pdf', 'doc', 'xls', 'ppt', 'rtf', 'swf', 'ps'."),
+    language: Optional[str] = Field(None, description="Language code for results. Examples: 'lang_en' (English), 'lang_es' (Spanish), 'lang_fr' (French)."),
+    country: Optional[str] = Field(None, description="Country code for results. Examples: 'countryUS' (United States), 'countryGB' (United Kingdom), 'countryCA' (Canada)."),
 ) -> str:
     """
     Performs a search using Google Custom Search JSON API.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        q (str): The search query. Required.
-        num (int): Number of results to return (1-10). Defaults to 10.
-        start (int): The index of the first result to return (1-based). Defaults to 1.
-        safe (Literal["active", "moderate", "off"]): Safe search level. Defaults to "off".
-        search_type (Optional[Literal["image"]]): Search for images if set to "image".
-        site_search (Optional[str]): Restrict search to a specific site/domain.
-        site_search_filter (Optional[Literal["e", "i"]]): Exclude ("e") or include ("i") site_search results.
-        date_restrict (Optional[str]): Restrict results by date (e.g., "d5" for past 5 days, "m3" for past 3 months).
-        file_type (Optional[str]): Filter by file type (e.g., "pdf", "doc").
-        language (Optional[str]): Language code for results (e.g., "lang_en").
-        country (Optional[str]): Country code for results (e.g., "countryUS").
+        user_google_email: The user's Google email address.
+        q: The search query string.
+        num: Number of results to return. Must be between 1 and 10. Defaults to 10.
+        start: The index of the first result to return (1-based). Use this for pagination. Defaults to 1.
+        safe: Safe search level. Options: 'active' (strict filtering), 'moderate' (moderate filtering), 'off' (no filtering). Defaults to 'off'.
+        search_type: Search type. If set to 'image', searches for images. If None, performs a regular web search.
+        site_search: Restrict search to a specific site or domain. Example: 'example.com' or '*.edu'.
+        site_search_filter: Filter for site_search. Options: 'e' (exclude site_search results), 'i' (include only site_search results). Only used when site_search is provided.
+        date_restrict: Restrict results by date. Examples: 'd5' (past 5 days), 'w2' (past 2 weeks), 'm3' (past 3 months), 'y1' (past year).
+        file_type: Filter by file type. Examples: 'pdf', 'doc', 'xls', 'ppt', 'rtf', 'swf', 'ps'.
+        language: Language code for results. Examples: 'lang_en' (English), 'lang_es' (Spanish), 'lang_fr' (French).
+        country: Country code for results. Examples: 'countryUS' (United States), 'countryGB' (United Kingdom), 'countryCA' (Canada).
 
     Returns:
         str: Formatted search results including title, link, and snippet for each result.
@@ -152,13 +154,13 @@ async def search_custom(
 @require_google_service("customsearch", "customsearch")
 async def get_search_engine_info(
     service,
-    user_google_email: str
+    user_google_email: str = Field(..., description="The user's Google email address."),
 ) -> str:
     """
     Retrieves metadata about a Programmable Search Engine.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
+        user_google_email: The user's Google email address.
 
     Returns:
         str: Information about the search engine including its configuration and available refinements.
@@ -220,23 +222,23 @@ async def get_search_engine_info(
 @require_google_service("customsearch", "customsearch")
 async def search_custom_siterestrict(
     service,
-    user_google_email: str,
-    q: str,
-    sites: List[str],
-    num: int = 10,
-    start: int = 1,
-    safe: Literal["active", "moderate", "off"] = "off"
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    q: str = Field(..., description="The search query string."),
+    sites: List[str] = Field(..., description="List of sites or domains to search within. Example: ['example.com', 'another-site.org']. The search will be restricted to these sites."),
+    num: int = Field(10, description="Number of results to return. Must be between 1 and 10. Defaults to 10."),
+    start: int = Field(1, description="The index of the first result to return (1-based). Use this for pagination. Defaults to 1."),
+    safe: Literal["active", "moderate", "off"] = Field("off", description="Safe search level. Options: 'active' (strict filtering), 'moderate' (moderate filtering), 'off' (no filtering). Defaults to 'off'."),
 ) -> str:
     """
     Performs a search restricted to specific sites using Google Custom Search.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        q (str): The search query. Required.
-        sites (List[str]): List of sites/domains to search within.
-        num (int): Number of results to return (1-10). Defaults to 10.
-        start (int): The index of the first result to return (1-based). Defaults to 1.
-        safe (Literal["active", "moderate", "off"]): Safe search level. Defaults to "off".
+        user_google_email: The user's Google email address.
+        q: The search query string.
+        sites: List of sites or domains to search within. Example: ['example.com', 'another-site.org']. The search will be restricted to these sites.
+        num: Number of results to return. Must be between 1 and 10. Defaults to 10.
+        start: The index of the first result to return (1-based). Use this for pagination. Defaults to 1.
+        safe: Safe search level. Options: 'active' (strict filtering), 'moderate' (moderate filtering), 'off' (no filtering). Defaults to 'off'.
 
     Returns:
         str: Formatted search results from the specified sites.

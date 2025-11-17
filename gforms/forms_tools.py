@@ -8,6 +8,7 @@ import logging
 import asyncio
 from typing import Optional, Dict, Any
 
+from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.server import server
@@ -21,19 +22,19 @@ logger = logging.getLogger(__name__)
 @require_google_service("forms", "forms")
 async def create_form(
     service,
-    user_google_email: str,
-    title: str,
-    description: Optional[str] = None,
-    document_title: Optional[str] = None
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    title: str = Field(..., description="The title of the form."),
+    description: Optional[str] = Field(None, description="The description of the form. This appears at the top of the form to provide context or instructions to respondents."),
+    document_title: Optional[str] = Field(None, description="The document title shown in the browser tab. If not provided, uses the form title."),
 ) -> str:
     """
     Create a new form using the title given in the provided form message in the request.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        title (str): The title of the form.
-        description (Optional[str]): The description of the form.
-        document_title (Optional[str]): The document title (shown in browser tab).
+        user_google_email: The user's Google email address.
+        title: The title of the form.
+        description: The description of the form. This appears at the top of the form to provide context or instructions to respondents.
+        document_title: The document title shown in the browser tab. If not provided, uses the form title.
 
     Returns:
         str: Confirmation message with form ID and edit URL.
@@ -70,15 +71,15 @@ async def create_form(
 @require_google_service("forms", "forms")
 async def get_form(
     service,
-    user_google_email: str,
-    form_id: str
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    form_id: str = Field(..., description="The ID of the form to retrieve. Obtain this from the form's edit URL (https://docs.google.com/forms/d/{form_id}/edit) or from form creation results."),
 ) -> str:
     """
     Get a form.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        form_id (str): The ID of the form to retrieve.
+        user_google_email: The user's Google email address.
+        form_id: The ID of the form to retrieve. Obtain this from the form's edit URL (https://docs.google.com/forms/d/{form_id}/edit) or from form creation results.
 
     Returns:
         str: Form details including title, description, questions, and URLs.
@@ -126,19 +127,19 @@ async def get_form(
 @require_google_service("forms", "forms")
 async def set_publish_settings(
     service,
-    user_google_email: str,
-    form_id: str,
-    publish_as_template: bool = False,
-    require_authentication: bool = False
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    form_id: str = Field(..., description="The ID of the form to update publish settings for. Obtain this from the form's edit URL or from form creation results."),
+    publish_as_template: bool = Field(False, description="Whether to publish the form as a template. If True, the form can be used as a template by others. Defaults to False."),
+    require_authentication: bool = Field(False, description="Whether to require authentication to view or submit the form. If True, only authenticated users can access the form. Defaults to False."),
 ) -> str:
     """
     Updates the publish settings of a form.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        form_id (str): The ID of the form to update publish settings for.
-        publish_as_template (bool): Whether to publish as a template. Defaults to False.
-        require_authentication (bool): Whether to require authentication to view/submit. Defaults to False.
+        user_google_email: The user's Google email address.
+        form_id: The ID of the form to update publish settings for. Obtain this from the form's edit URL or from form creation results.
+        publish_as_template: Whether to publish the form as a template. If True, the form can be used as a template by others. Defaults to False.
+        require_authentication: Whether to require authentication to view or submit the form. If True, only authenticated users can access the form. Defaults to False.
 
     Returns:
         str: Confirmation message of the successful publish settings update.
@@ -164,17 +165,17 @@ async def set_publish_settings(
 @require_google_service("forms", "forms")
 async def get_form_response(
     service,
-    user_google_email: str,
-    form_id: str,
-    response_id: str
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    form_id: str = Field(..., description="The ID of the form. Obtain this from the form's edit URL or from form creation results."),
+    response_id: str = Field(..., description="The ID of the response to retrieve. Obtain this from list_form_responses results."),
 ) -> str:
     """
     Get one response from the form.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        form_id (str): The ID of the form.
-        response_id (str): The ID of the response to retrieve.
+        user_google_email: The user's Google email address.
+        form_id: The ID of the form. Obtain this from the form's edit URL or from form creation results.
+        response_id: The ID of the response to retrieve. Obtain this from list_form_responses results.
 
     Returns:
         str: Response details including answers and metadata.
@@ -218,19 +219,19 @@ async def get_form_response(
 @require_google_service("forms", "forms")
 async def list_form_responses(
     service,
-    user_google_email: str,
-    form_id: str,
-    page_size: int = 10,
-    page_token: Optional[str] = None
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    form_id: str = Field(..., description="The ID of the form. Obtain this from the form's edit URL or from form creation results."),
+    page_size: int = Field(10, description="Maximum number of responses to return per page. Defaults to 10."),
+    page_token: Optional[str] = Field(None, description="Token for retrieving the next page of results. Use the 'next_page_token' from the previous response to get more results."),
 ) -> str:
     """
     List a form's responses.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        form_id (str): The ID of the form.
-        page_size (int): Maximum number of responses to return. Defaults to 10.
-        page_token (Optional[str]): Token for retrieving next page of results.
+        user_google_email: The user's Google email address.
+        form_id: The ID of the form. Obtain this from the form's edit URL or from form creation results.
+        page_size: Maximum number of responses to return per page. Defaults to 10.
+        page_token: Token for retrieving the next page of results. Use the 'next_page_token' from the previous response to get more results.
 
     Returns:
         str: List of responses with basic details and pagination info.

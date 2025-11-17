@@ -8,6 +8,7 @@ import asyncio
 from typing import Optional
 
 from googleapiclient.errors import HttpError
+from pydantic import Field
 
 # Auth & server utilities
 from auth.service_decorator import require_google_service
@@ -21,12 +22,17 @@ logger = logging.getLogger(__name__)
 @handle_http_errors("list_spaces", service_type="chat")
 async def list_spaces(
     service,
-    user_google_email: str,
-    page_size: int = 100,
-    space_type: str = "all"  # "all", "room", "dm"
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    page_size: int = Field(100, description="Maximum number of spaces to return. Defaults to 100."),
+    space_type: str = Field("all", description="Type of spaces to list. Options: 'all' (all spaces), 'room' (chat rooms only), 'dm' (direct messages only). Defaults to 'all'."),
 ) -> str:
     """
     Lists Google Chat spaces (rooms and direct messages) accessible to the user.
+
+    Args:
+        user_google_email: The user's Google email address.
+        page_size: Maximum number of spaces to return. Defaults to 100.
+        space_type: Type of spaces to list. Options: 'all' (all spaces), 'room' (chat rooms only), 'dm' (direct messages only). Defaults to 'all'.
 
     Returns:
         str: A formatted list of Google Chat spaces accessible to the user.
@@ -66,13 +72,19 @@ async def list_spaces(
 @handle_http_errors("get_messages", service_type="chat")
 async def get_messages(
     service,
-    user_google_email: str,
-    space_id: str,
-    page_size: int = 50,
-    order_by: str = "createTime desc"
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    space_id: str = Field(..., description="The ID of the Google Chat space to retrieve messages from. Obtain this from list_spaces results."),
+    page_size: int = Field(50, description="Maximum number of messages to return. Defaults to 50."),
+    order_by: str = Field("createTime desc", description="Order in which to return messages. Options: 'createTime desc' (newest first), 'createTime asc' (oldest first). Defaults to 'createTime desc'."),
 ) -> str:
     """
     Retrieves messages from a Google Chat space.
+
+    Args:
+        user_google_email: The user's Google email address.
+        space_id: The ID of the Google Chat space to retrieve messages from. Obtain this from list_spaces results.
+        page_size: Maximum number of messages to return. Defaults to 50.
+        order_by: Order in which to return messages. Options: 'createTime desc' (newest first), 'createTime asc' (oldest first). Defaults to 'createTime desc'.
 
     Returns:
         str: Formatted messages from the specified space.
@@ -116,13 +128,19 @@ async def get_messages(
 @handle_http_errors("send_message", service_type="chat")
 async def send_message(
     service,
-    user_google_email: str,
-    space_id: str,
-    message_text: str,
-    thread_key: Optional[str] = None
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    space_id: str = Field(..., description="The ID of the Google Chat space to send the message to. Obtain this from list_spaces results."),
+    message_text: str = Field(..., description="The text content of the message to send."),
+    thread_key: Optional[str] = Field(None, description="Thread key for replying to a specific thread. If provided, the message will be sent as a reply in that thread. If not provided, sends a new message."),
 ) -> str:
     """
     Sends a message to a Google Chat space.
+
+    Args:
+        user_google_email: The user's Google email address.
+        space_id: The ID of the Google Chat space to send the message to. Obtain this from list_spaces results.
+        message_text: The text content of the message to send.
+        thread_key: Thread key for replying to a specific thread. If provided, the message will be sent as a reply in that thread. If not provided, sends a new message.
 
     Returns:
         str: Confirmation message with sent message details.
@@ -157,13 +175,19 @@ async def send_message(
 @handle_http_errors("search_messages", service_type="chat")
 async def search_messages(
     service,
-    user_google_email: str,
-    query: str,
-    space_id: Optional[str] = None,
-    page_size: int = 25
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    query: str = Field(..., description="The search query string to match against message text content."),
+    space_id: Optional[str] = Field(None, description="The ID of a specific Google Chat space to search within. If not provided, searches across all accessible spaces (limited to first 10 spaces). Obtain space IDs from list_spaces results."),
+    page_size: int = Field(25, description="Maximum number of messages to return per space. Defaults to 25."),
 ) -> str:
     """
     Searches for messages in Google Chat spaces by text content.
+
+    Args:
+        user_google_email: The user's Google email address.
+        query: The search query string to match against message text content.
+        space_id: The ID of a specific Google Chat space to search within. If not provided, searches across all accessible spaces (limited to first 10 spaces). Obtain space IDs from list_spaces results.
+        page_size: Maximum number of messages to return per space. Defaults to 25.
 
     Returns:
         str: A formatted list of messages matching the search query.

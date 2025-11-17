@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.middleware import Middleware
+from pydantic import Field
 
 from fastmcp import FastMCP
 
@@ -192,7 +193,10 @@ async def oauth2_callback(request: Request) -> HTMLResponse:
         return create_server_error_response(str(e))
 
 @server.tool()
-async def start_google_auth(service_name: str, user_google_email: str = USER_GOOGLE_EMAIL) -> str:
+async def start_google_auth(
+    service_name: str = Field(..., description="Name of the Google service to authenticate (e.g., 'Gmail', 'Google Calendar', 'Google Drive')."),
+    user_google_email: str = Field(default=USER_GOOGLE_EMAIL, description="The user's Google email address. If not provided, uses the default from environment configuration.")
+) -> str:
     """
     Manually initiate Google OAuth authentication flow.
 
@@ -205,6 +209,13 @@ async def start_google_auth(service_name: str, user_google_email: str = USER_GOO
 
     In most cases, simply try calling the Google Workspace tool you need - it will
     automatically handle authentication if required.
+
+    Args:
+        service_name: Name of the Google service to authenticate (e.g., 'Gmail', 'Google Calendar', 'Google Drive').
+        user_google_email: The user's Google email address. If not provided, uses the default from environment configuration.
+
+    Returns:
+        str: Authentication URL and instructions for completing the OAuth flow.
     """
     if not user_google_email:
         raise ValueError("user_google_email must be provided.")

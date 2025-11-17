@@ -12,6 +12,8 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 import io
 import httpx
 
+from pydantic import Field
+
 from auth.service_decorator import require_google_service
 from core.utils import extract_office_xml_text, handle_http_errors
 from core.server import server
@@ -78,25 +80,23 @@ def _build_drive_list_params(
 @require_google_service("drive", "drive_read")
 async def search_drive_files(
     service,
-    user_google_email: str,
-    query: str,
-    page_size: int = 10,
-    drive_id: Optional[str] = None,
-    include_items_from_all_drives: bool = True,
-    corpora: Optional[str] = None,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    query: str = Field(..., description="The search query string. Supports Google Drive search operators (e.g., \"name contains 'report'\", \"mimeType='application/vnd.google-apps.document'\", \"'folder_id' in parents\")."),
+    page_size: int = Field(10, description="The maximum number of files to return. Defaults to 10."),
+    drive_id: Optional[str] = Field(None, description="ID of the shared drive to search. If None, behavior depends on `corpora` and `include_items_from_all_drives`."),
+    include_items_from_all_drives: bool = Field(True, description="Whether shared drive items should be included in results. Defaults to True. This is effective when not specifying a `drive_id`."),
+    corpora: Optional[str] = Field(None, description="Bodies of items to query. Options: 'user' (My Drive only), 'domain' (domain-wide), 'drive' (specific shared drive), 'allDrives' (all accessible). If 'drive_id' is specified and 'corpora' is None, it defaults to 'drive'. Prefer 'user' or 'drive' over 'allDrives' for efficiency."),
 ) -> str:
     """
     Searches for files and folders within a user's Google Drive, including shared drives.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        query (str): The search query string. Supports Google Drive search operators.
-        page_size (int): The maximum number of files to return. Defaults to 10.
-        drive_id (Optional[str]): ID of the shared drive to search. If None, behavior depends on `corpora` and `include_items_from_all_drives`.
-        include_items_from_all_drives (bool): Whether shared drive items should be included in results. Defaults to True. This is effective when not specifying a `drive_id`.
-        corpora (Optional[str]): Bodies of items to query (e.g., 'user', 'domain', 'drive', 'allDrives').
-                                 If 'drive_id' is specified and 'corpora' is None, it defaults to 'drive'.
-                                 Otherwise, Drive API default behavior applies. Prefer 'user' or 'drive' over 'allDrives' for efficiency.
+        user_google_email: The user's Google email address.
+        query: The search query string. Supports Google Drive search operators (e.g., "name contains 'report'", "mimeType='application/vnd.google-apps.document'", "'folder_id' in parents").
+        page_size: The maximum number of files to return. Defaults to 10.
+        drive_id: ID of the shared drive to search. If None, behavior depends on `corpora` and `include_items_from_all_drives`.
+        include_items_from_all_drives: Whether shared drive items should be included in results. Defaults to True. This is effective when not specifying a `drive_id`.
+        corpora: Bodies of items to query. Options: 'user' (My Drive only), 'domain' (domain-wide), 'drive' (specific shared drive), 'allDrives' (all accessible). If 'drive_id' is specified and 'corpora' is None, it defaults to 'drive'. Prefer 'user' or 'drive' over 'allDrives' for efficiency.
 
     Returns:
         str: A formatted list of found files/folders with their details (ID, name, type, size, modified time, link).
@@ -145,8 +145,8 @@ async def search_drive_files(
 @require_google_service("drive", "drive_read")
 async def get_drive_file_content(
     service,
-    user_google_email: str,
-    file_id: str,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    file_id: str = Field(..., description="The Google Drive file ID. Can be obtained from search_drive_files or list_drive_items results."),
 ) -> str:
     """
     Retrieves the content of a specific Google Drive file by ID, supporting files in shared drives.
@@ -157,8 +157,8 @@ async def get_drive_file_content(
     • Any other file → downloaded; tries UTF-8 decode, else notes binary.
 
     Args:
-        user_google_email: The user’s Google email address.
-        file_id: Drive file ID.
+        user_google_email: The user's Google email address.
+        file_id: The Google Drive file ID. Can be obtained from search_drive_files or list_drive_items results.
 
     Returns:
         str: The file content as plain text with metadata header.
@@ -235,12 +235,12 @@ async def get_drive_file_content(
 @require_google_service("drive", "drive_read")
 async def list_drive_items(
     service,
-    user_google_email: str,
-    folder_id: str = 'root',
-    page_size: int = 100,
-    drive_id: Optional[str] = None,
-    include_items_from_all_drives: bool = True,
-    corpora: Optional[str] = None,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    folder_id: str = Field('root', description="The ID of the Google Drive folder. Use 'root' for the root of My Drive. For a shared drive, this can be the shared drive's ID to list its root, or a folder ID within that shared drive."),
+    page_size: int = Field(100, description="The maximum number of items to return. Defaults to 100."),
+    drive_id: Optional[str] = Field(None, description="ID of the shared drive. If provided, the listing is scoped to this drive. If not provided, lists items from user's 'My Drive' and accessible shared drives (if include_items_from_all_drives is True)."),
+    include_items_from_all_drives: bool = Field(True, description="Whether items from all accessible shared drives should be included if drive_id is not set. Defaults to True."),
+    corpora: Optional[str] = Field(None, description="Corpus to query. Options: 'user' (My Drive only), 'drive' (specific shared drive), 'allDrives' (all accessible). If drive_id is set and corpora is None, 'drive' is used. If None and no drive_id, API defaults apply."),
 ) -> str:
     """
     Lists files and folders, supporting shared drives.
@@ -248,12 +248,12 @@ async def list_drive_items(
     If `drive_id` is not specified, lists items from user's "My Drive" and accessible shared drives (if `include_items_from_all_drives` is True).
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        folder_id (str): The ID of the Google Drive folder. Defaults to 'root'. For a shared drive, this can be the shared drive's ID to list its root, or a folder ID within that shared drive.
-        page_size (int): The maximum number of items to return. Defaults to 100.
-        drive_id (Optional[str]): ID of the shared drive. If provided, the listing is scoped to this drive.
-        include_items_from_all_drives (bool): Whether items from all accessible shared drives should be included if `drive_id` is not set. Defaults to True.
-        corpora (Optional[str]): Corpus to query ('user', 'drive', 'allDrives'). If `drive_id` is set and `corpora` is None, 'drive' is used. If None and no `drive_id`, API defaults apply.
+        user_google_email: The user's Google email address.
+        folder_id: The ID of the Google Drive folder. Use 'root' for the root of My Drive. For a shared drive, this can be the shared drive's ID to list its root, or a folder ID within that shared drive.
+        page_size: The maximum number of items to return. Defaults to 100.
+        drive_id: ID of the shared drive. If provided, the listing is scoped to this drive. If not provided, lists items from user's 'My Drive' and accessible shared drives (if include_items_from_all_drives is True).
+        include_items_from_all_drives: Whether items from all accessible shared drives should be included if drive_id is not set. Defaults to True.
+        corpora: Corpus to query. Options: 'user' (My Drive only), 'drive' (specific shared drive), 'allDrives' (all accessible). If drive_id is set and corpora is None, 'drive' is used. If None and no drive_id, API defaults apply.
 
     Returns:
         str: A formatted list of files/folders in the specified folder.
@@ -291,24 +291,24 @@ async def list_drive_items(
 @require_google_service("drive", "drive_file")
 async def create_drive_file(
     service,
-    user_google_email: str,
-    file_name: str,
-    content: Optional[str] = None,  # Now explicitly Optional
-    folder_id: str = 'root',
-    mime_type: str = 'text/plain',
-    fileUrl: Optional[str] = None,  # Now explicitly Optional
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    file_name: str = Field(..., description="The name for the new file."),
+    content: Optional[str] = Field(None, description="The content to write to the file. Either 'content' or 'fileUrl' must be provided."),
+    folder_id: str = Field('root', description="The ID of the parent folder. Use 'root' for the root of My Drive. For shared drives, this must be a folder ID within the shared drive."),
+    mime_type: str = Field('text/plain', description="The MIME type of the file. Examples: 'text/plain', 'text/html', 'application/json', 'image/png'. Defaults to 'text/plain'. If fileUrl is provided, the MIME type may be automatically detected from the Content-Type header."),
+    fileUrl: Optional[str] = Field(None, description="Public URL to fetch the file content from. Either 'content' or 'fileUrl' must be provided. The file will be downloaded from this URL and uploaded to Google Drive."),
 ) -> str:
     """
     Creates a new file in Google Drive, supporting creation within shared drives.
     Accepts either direct content or a fileUrl to fetch the content from.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        file_name (str): The name for the new file.
-        content (Optional[str]): If provided, the content to write to the file.
-        folder_id (str): The ID of the parent folder. Defaults to 'root'. For shared drives, this must be a folder ID within the shared drive.
-        mime_type (str): The MIME type of the file. Defaults to 'text/plain'.
-        fileUrl (Optional[str]): If provided, fetches the file content from this URL.
+        user_google_email: The user's Google email address.
+        file_name: The name for the new file.
+        content: The content to write to the file. Either 'content' or 'fileUrl' must be provided.
+        folder_id: The ID of the parent folder. Use 'root' for the root of My Drive. For shared drives, this must be a folder ID within the shared drive.
+        mime_type: The MIME type of the file. Examples: 'text/plain', 'text/html', 'application/json', 'image/png'. Defaults to 'text/plain'. If fileUrl is provided, the MIME type may be automatically detected from the Content-Type header.
+        fileUrl: Public URL to fetch the file content from. Either 'content' or 'fileUrl' must be provided. The file will be downloaded from this URL and uploaded to Google Drive.
 
     Returns:
         str: Confirmation message of the successful file creation with file link.

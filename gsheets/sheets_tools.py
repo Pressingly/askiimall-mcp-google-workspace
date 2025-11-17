@@ -9,6 +9,7 @@ import asyncio
 import json
 from typing import List, Optional, Union
 
+from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.server import server
@@ -24,15 +25,15 @@ logger = logging.getLogger(__name__)
 @require_google_service("drive", "drive_read")
 async def list_spreadsheets(
     service,
-    user_google_email: str,
-    max_results: int = 25,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    max_results: int = Field(25, description="Maximum number of spreadsheets to return. Defaults to 25."),
 ) -> str:
     """
     Lists spreadsheets from Google Drive that the user has access to.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        max_results (int): Maximum number of spreadsheets to return. Defaults to 25.
+        user_google_email: The user's Google email address.
+        max_results: Maximum number of spreadsheets to return. Defaults to 25.
 
     Returns:
         str: A formatted list of spreadsheet files (name, ID, modified time).
@@ -73,15 +74,15 @@ async def list_spreadsheets(
 @require_google_service("sheets", "sheets_read")
 async def get_spreadsheet_info(
     service,
-    user_google_email: str,
-    spreadsheet_id: str,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet to get info for. Obtain this from list_spreadsheets results."),
 ) -> str:
     """
     Gets information about a specific spreadsheet including its sheets.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        spreadsheet_id (str): The ID of the spreadsheet to get info for. Required.
+        user_google_email: The user's Google email address.
+        spreadsheet_id: The ID of the spreadsheet to get info for. Obtain this from list_spreadsheets results.
 
     Returns:
         str: Formatted spreadsheet information including title and sheets list.
@@ -123,17 +124,17 @@ async def get_spreadsheet_info(
 @require_google_service("sheets", "sheets_read")
 async def read_sheet_values(
     service,
-    user_google_email: str,
-    spreadsheet_id: str,
-    range_name: str = "A1:Z1000",
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet. Obtain this from list_spreadsheets results."),
+    range_name: str = Field("A1:Z1000", description="The range to read in A1 notation. Examples: 'Sheet1!A1:D10' (specific sheet and range), 'A1:D10' (current sheet), 'A:Z' (entire columns A through Z). Defaults to 'A1:Z1000'."),
 ) -> str:
     """
     Reads values from a specific range in a Google Sheet.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        spreadsheet_id (str): The ID of the spreadsheet. Required.
-        range_name (str): The range to read (e.g., "Sheet1!A1:D10", "A1:D10"). Defaults to "A1:Z1000".
+        user_google_email: The user's Google email address.
+        spreadsheet_id: The ID of the spreadsheet. Obtain this from list_spreadsheets results.
+        range_name: The range to read in A1 notation. Examples: 'Sheet1!A1:D10' (specific sheet and range), 'A1:D10' (current sheet), 'A:Z' (entire columns A through Z). Defaults to 'A1:Z1000'.
 
     Returns:
         str: The formatted values from the specified range.
@@ -173,23 +174,23 @@ async def read_sheet_values(
 @require_google_service("sheets", "sheets_write")
 async def modify_sheet_values(
     service,
-    user_google_email: str,
-    spreadsheet_id: str,
-    range_name: str,
-    values: Optional[Union[str, List[List[str]]]] = None,
-    value_input_option: str = "USER_ENTERED",
-    clear_values: bool = False,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet. Obtain this from list_spreadsheets results."),
+    range_name: str = Field(..., description="The range to modify in A1 notation. Examples: 'Sheet1!A1:D10' (specific sheet and range), 'A1:D10' (current sheet)."),
+    values: Optional[Union[str, List[List[str]]]] = Field(None, description="2D array of values to write/update. Can be a JSON string or Python list of lists. Each inner list represents a row. Example: [['Header1', 'Header2'], ['Value1', 'Value2']]. Required unless clear_values=True."),
+    value_input_option: str = Field("USER_ENTERED", description="How to interpret input values. Options: 'RAW' (values are stored exactly as entered, formulas are stored as text) or 'USER_ENTERED' (values are parsed as if typed into the UI, formulas are evaluated). Defaults to 'USER_ENTERED'."),
+    clear_values: bool = Field(False, description="If True, clears the range instead of writing values. When True, the 'values' parameter is ignored. Defaults to False."),
 ) -> str:
     """
     Modifies values in a specific range of a Google Sheet - can write, update, or clear values.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        spreadsheet_id (str): The ID of the spreadsheet. Required.
-        range_name (str): The range to modify (e.g., "Sheet1!A1:D10", "A1:D10"). Required.
-        values (Optional[Union[str, List[List[str]]]]): 2D array of values to write/update. Can be a JSON string or Python list. Required unless clear_values=True.
-        value_input_option (str): How to interpret input values ("RAW" or "USER_ENTERED"). Defaults to "USER_ENTERED".
-        clear_values (bool): If True, clears the range instead of writing values. Defaults to False.
+        user_google_email: The user's Google email address.
+        spreadsheet_id: The ID of the spreadsheet. Obtain this from list_spreadsheets results.
+        range_name: The range to modify in A1 notation. Examples: 'Sheet1!A1:D10' (specific sheet and range), 'A1:D10' (current sheet).
+        values: 2D array of values to write/update. Can be a JSON string or Python list of lists. Each inner list represents a row. Example: [['Header1', 'Header2'], ['Value1', 'Value2']]. Required unless clear_values=True.
+        value_input_option: How to interpret input values. Options: 'RAW' (values are stored exactly as entered, formulas are stored as text) or 'USER_ENTERED' (values are parsed as if typed into the UI, formulas are evaluated). Defaults to 'USER_ENTERED'.
+        clear_values: If True, clears the range instead of writing values. When True, the 'values' parameter is ignored. Defaults to False.
 
     Returns:
         str: Confirmation message of the successful modification operation.
@@ -261,17 +262,17 @@ async def modify_sheet_values(
 @require_google_service("sheets", "sheets_write")
 async def create_spreadsheet(
     service,
-    user_google_email: str,
-    title: str,
-    sheet_names: Optional[List[str]] = None,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    title: str = Field(..., description="The title of the new spreadsheet."),
+    sheet_names: Optional[List[str]] = Field(None, description="List of sheet names to create. If not provided, creates one sheet with the default name 'Sheet1'. Example: ['Data', 'Summary', 'Charts']."),
 ) -> str:
     """
     Creates a new Google Spreadsheet.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        title (str): The title of the new spreadsheet. Required.
-        sheet_names (Optional[List[str]]): List of sheet names to create. If not provided, creates one sheet with default name.
+        user_google_email: The user's Google email address.
+        title: The title of the new spreadsheet.
+        sheet_names: List of sheet names to create. If not provided, creates one sheet with the default name 'Sheet1'. Example: ['Data', 'Summary', 'Charts'].
 
     Returns:
         str: Information about the newly created spreadsheet including ID and URL.
@@ -310,17 +311,17 @@ async def create_spreadsheet(
 @require_google_service("sheets", "sheets_write")
 async def create_sheet(
     service,
-    user_google_email: str,
-    spreadsheet_id: str,
-    sheet_name: str,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet to add a sheet to. Obtain this from list_spreadsheets results."),
+    sheet_name: str = Field(..., description="The name of the new sheet to create."),
 ) -> str:
     """
     Creates a new sheet within an existing spreadsheet.
 
     Args:
-        user_google_email (str): The user's Google email address. Required.
-        spreadsheet_id (str): The ID of the spreadsheet. Required.
-        sheet_name (str): The name of the new sheet. Required.
+        user_google_email: The user's Google email address.
+        spreadsheet_id: The ID of the spreadsheet to add a sheet to. Obtain this from list_spreadsheets results.
+        sheet_name: The name of the new sheet to create.
 
     Returns:
         str: Confirmation message of the successful sheet creation.
