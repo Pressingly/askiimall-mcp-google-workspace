@@ -285,11 +285,6 @@ async def search_gmail_messages(
     Searches messages in a user's Gmail account based on a query.
     Returns both Message IDs and Thread IDs for each found message, along with Gmail web interface links for manual verification.
 
-    Args:
-        query: The search query. Supports standard Gmail search operators (e.g., 'from:example@gmail.com', 'subject:meeting', 'has:attachment').
-        user_google_email: The user's Google email address.
-        page_size: The maximum number of messages to return. Defaults to 10.
-
     Returns:
         str: LLM-friendly structured results with Message IDs, Thread IDs, and clickable Gmail web interface URLs for each found message.
     """
@@ -330,10 +325,6 @@ async def get_gmail_message_content(
 ) -> str:
     """
     Retrieves the full content (subject, sender, plain text body) of a specific Gmail message.
-
-    Args:
-        message_id: The unique ID of the Gmail message to retrieve. Obtain this from search_gmail_messages results.
-        user_google_email: The user's Google email address.
 
     Returns:
         str: The message details including subject, sender, and body content.
@@ -407,11 +398,6 @@ async def get_gmail_messages_content_batch(
     """
     Retrieves the content of multiple Gmail messages in a single batch request.
     Supports up to 25 messages per batch to prevent SSL connection exhaustion.
-
-    Args:
-        message_ids: List of Gmail message IDs to retrieve. Maximum 25 messages per batch to prevent SSL connection exhaustion.
-        user_google_email: The user's Google email address.
-        format: Message format. "full" includes body content, "metadata" only includes headers (Subject, From, etc.).
 
     Returns:
         str: A formatted list of message contents with separators.
@@ -587,17 +573,6 @@ async def send_gmail_message(
     """
     Sends an email using the user's Gmail account. Supports both new emails and replies.
 
-    Args:
-        to (str): Recipient email address.
-        subject (str): Email subject.
-        body (str): Email body (plain text).
-        cc (Optional[str]): Optional CC email address.
-        bcc (Optional[str]): Optional BCC email address.
-        user_google_email (str): The user's Google email address. Required.
-        thread_id (Optional[str]): Optional Gmail thread ID to reply within. When provided, sends a reply.
-        in_reply_to (Optional[str]): Optional Message-ID of the message being replied to. Used for proper threading.
-        references (Optional[str]): Optional chain of Message-IDs for proper threading. Should include all previous Message-IDs.
-
     Returns:
         str: Confirmation message with the sent email's message ID.
 
@@ -671,17 +646,6 @@ async def draft_gmail_message(
 ) -> str:
     """
     Creates a draft email in the user's Gmail account. Supports both new drafts and reply drafts.
-
-    Args:
-        user_google_email (str): The user's Google email address. Required.
-        subject (str): Email subject.
-        body (str): Email body (plain text).
-        to (Optional[str]): Optional recipient email address. Can be left empty for drafts.
-        cc (Optional[str]): Optional CC email address.
-        bcc (Optional[str]): Optional BCC email address.
-        thread_id (Optional[str]): Optional Gmail thread ID to reply within. When provided, creates a reply draft.
-        in_reply_to (Optional[str]): Optional Message-ID of the message being replied to. Used for proper threading.
-        references (Optional[str]): Optional chain of Message-IDs for proper threading. Should include all previous Message-IDs.
 
     Returns:
         str: Confirmation message with the created draft's ID.
@@ -826,10 +790,6 @@ async def get_gmail_thread_content(
     """
     Retrieves the complete content of a Gmail conversation thread, including all messages.
 
-    Args:
-        thread_id: The unique ID of the Gmail thread to retrieve. Obtain this from search_gmail_messages results.
-        user_google_email: The user's Google email address.
-
     Returns:
         str: The complete thread content with all messages formatted for reading.
     """
@@ -856,10 +816,6 @@ async def get_gmail_threads_content_batch(
     """
     Retrieves the content of multiple Gmail threads in a single batch request.
     Supports up to 25 threads per batch to prevent SSL connection exhaustion.
-
-    Args:
-        thread_ids: A list of Gmail thread IDs to retrieve. The function will automatically batch requests in chunks of 25 to prevent SSL connection exhaustion.
-        user_google_email: The user's Google email address.
 
     Returns:
         str: A formatted list of thread contents with separators.
@@ -962,9 +918,6 @@ async def list_gmail_labels(
     """
     Lists all labels in the user's Gmail account.
 
-    Args:
-        user_google_email: The user's Google email address.
-
     Returns:
         str: A formatted list of all labels with their IDs, names, and types.
     """
@@ -1017,14 +970,6 @@ async def manage_gmail_label(
 ) -> str:
     """
     Manages Gmail labels: create, update, or delete labels.
-
-    Args:
-        user_google_email: The user's Google email address.
-        action: Action to perform on the label. Options: 'create' (create a new label), 'update' (modify an existing label), 'delete' (remove a label).
-        name: Label name. Required for 'create' action, optional for 'update' action. Ignored for 'delete' action.
-        label_id: Label ID. Required for 'update' and 'delete' actions. Obtain label IDs from list_gmail_labels. Ignored for 'create' action.
-        label_list_visibility: Whether the label is shown in the Gmail label list. Options: 'labelShow' (visible in label list) or 'labelHide' (hidden from label list). Defaults to 'labelShow'.
-        message_list_visibility: Whether the label is shown in the message list. Options: 'show' (visible in message list) or 'hide' (hidden from message list). Defaults to 'show'.
 
     Returns:
         str: Confirmation message of the label operation.
@@ -1097,12 +1042,6 @@ async def modify_gmail_message_labels(
     To archive an email, remove the INBOX label.
     To delete an email, add the TRASH label.
 
-    Args:
-        user_google_email: The user's Google email address.
-        message_id: The ID of the message to modify. Obtain this from search_gmail_messages or get_gmail_message_content results.
-        add_label_ids: List of label IDs to add to the message. Obtain label IDs from list_gmail_labels. To archive an email, remove the INBOX label using remove_label_ids instead.
-        remove_label_ids: List of label IDs to remove from the message. Obtain label IDs from list_gmail_labels. To archive an email, remove the INBOX label. To delete an email, add the TRASH label using add_label_ids instead.
-
     Returns:
         str: Confirmation message of the label changes applied to the message.
     """
@@ -1146,12 +1085,6 @@ async def batch_modify_gmail_message_labels(
 ) -> str:
     """
     Adds or removes labels from multiple Gmail messages in a single batch request.
-
-    Args:
-        user_google_email: The user's Google email address.
-        message_ids: A list of message IDs to modify. Obtain message IDs from search_gmail_messages results.
-        add_label_ids: List of label IDs to add to the messages. Obtain label IDs from list_gmail_labels. To archive emails, remove the INBOX label using remove_label_ids instead.
-        remove_label_ids: List of label IDs to remove from the messages. Obtain label IDs from list_gmail_labels. To archive emails, remove the INBOX label. To delete emails, add the TRASH label using add_label_ids instead.
 
     Returns:
         str: Confirmation message of the label changes applied to the messages.

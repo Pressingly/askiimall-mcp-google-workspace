@@ -30,11 +30,6 @@ async def list_task_lists(
     """
     List all task lists for the user.
 
-    Args:
-        user_google_email: The user's Google email address.
-        max_results: Maximum number of task lists to return. Defaults to 1000, maximum is 1000.
-        page_token: Token for retrieving the next page of results. Use the 'next_page_token' from the previous response to get more results.
-
     Returns:
         str: List of task lists with their IDs, titles, and details.
     """
@@ -89,10 +84,6 @@ async def get_task_list(
     """
     Get details of a specific task list.
 
-    Args:
-        user_google_email: The user's Google email address.
-        task_list_id: The ID of the task list to retrieve. Obtain this from list_task_lists results.
-
     Returns:
         str: Task list details including title, ID, and last updated time.
     """
@@ -132,10 +123,6 @@ async def create_task_list(
 ) -> str:
     """
     Create a new task list.
-
-    Args:
-        user_google_email: The user's Google email address.
-        title: The title of the new task list.
 
     Returns:
         str: Confirmation message with the new task list ID and details.
@@ -182,11 +169,6 @@ async def update_task_list(
     """
     Update an existing task list.
 
-    Args:
-        user_google_email: The user's Google email address.
-        task_list_id: The ID of the task list to update. Obtain this from list_task_lists results.
-        title: The new title for the task list.
-
     Returns:
         str: Confirmation message with updated task list details.
     """
@@ -230,10 +212,6 @@ async def delete_task_list(
 ) -> str:
     """
     Delete a task list. Note: This will also delete all tasks in the list.
-
-    Args:
-        user_google_email: The user's Google email address.
-        task_list_id: The ID of the task list to delete. Obtain this from list_task_lists results. WARNING: This will also delete all tasks in the list.
 
     Returns:
         str: Confirmation message.
@@ -281,21 +259,6 @@ async def list_tasks(
 ) -> str:
     """
     List all tasks in a specific task list.
-
-    Args:
-        user_google_email: The user's Google email address.
-        task_list_id: The ID of the task list to retrieve tasks from. Obtain this from list_task_lists results.
-        max_results: Maximum number of tasks to return. Defaults to 20, maximum is 100.
-        page_token: Token for retrieving the next page of results. Use the 'next_page_token' from the previous response to get more results.
-        show_completed: Whether to include completed tasks. If True, includes completed tasks. If False, excludes them. If None, uses default (True).
-        show_deleted: Whether to include deleted tasks. If True, includes deleted tasks. If False, excludes them. If None, uses default (False).
-        show_hidden: Whether to include hidden tasks. If True, includes hidden tasks. If False, excludes them. If None, uses default (False).
-        show_assigned: Whether to include assigned tasks. If True, includes assigned tasks. If False, excludes them. If None, uses default (False).
-        completed_max: Upper bound for completion date in RFC 3339 timestamp format. Only tasks completed before this date will be returned.
-        completed_min: Lower bound for completion date in RFC 3339 timestamp format. Only tasks completed after this date will be returned.
-        due_max: Upper bound for due date in RFC 3339 timestamp format. Only tasks with due dates before this date will be returned.
-        due_min: Lower bound for due date in RFC 3339 timestamp format. Only tasks with due dates after this date will be returned.
-        updated_min: Lower bound for last modification time in RFC 3339 timestamp format. Only tasks modified after this time will be returned.
 
     Returns:
         str: List of tasks with their details.
@@ -378,11 +341,6 @@ async def get_task(
     """
     Get details of a specific task.
 
-    Args:
-        user_google_email: The user's Google email address.
-        task_list_id: The ID of the task list containing the task. Obtain this from list_task_lists results.
-        task_id: The ID of the task to retrieve. Obtain this from list_tasks results.
-
     Returns:
         str: Task details including title, notes, status, due date, etc.
     """
@@ -442,15 +400,6 @@ async def create_task(
 ) -> str:
     """
     Create a new task in a task list.
-
-    Args:
-        user_google_email: The user's Google email address.
-        task_list_id: The ID of the task list to create the task in. Obtain this from list_task_lists results.
-        title: The title of the task.
-        notes: Notes or description for the task.
-        due: Due date in RFC 3339 timestamp format (e.g., '2024-12-31T23:59:59Z' or '2024-12-31').
-        parent: Parent task ID to make this task a subtask. Obtain the parent task ID from list_tasks results.
-        previous: Previous sibling task ID for positioning. The new task will be inserted after this task. Obtain the previous task ID from list_tasks results.
 
     Returns:
         str: Confirmation message with the new task ID and details.
@@ -517,15 +466,6 @@ async def update_task(
 ) -> str:
     """
     Update an existing task.
-
-    Args:
-        user_google_email: The user's Google email address.
-        task_list_id: The ID of the task list containing the task. Obtain this from list_task_lists results.
-        task_id: The ID of the task to update. Obtain this from list_tasks results.
-        title: New title for the task. If not provided, the existing title is preserved.
-        notes: New notes or description for the task. If not provided, the existing notes are preserved.
-        status: New status for the task. Options: 'needsAction' (task is not completed), 'completed' (task is completed). If not provided, the existing status is preserved.
-        due: New due date in RFC 3339 timestamp format (e.g., '2024-12-31T23:59:59Z' or '2024-12-31'). If not provided, the existing due date is preserved.
 
     Returns:
         str: Confirmation message with updated task details.
@@ -596,11 +536,6 @@ async def delete_task(
     """
     Delete a task from a task list.
 
-    Args:
-        user_google_email: The user's Google email address.
-        task_list_id: The ID of the task list containing the task. Obtain this from list_task_lists results.
-        task_id: The ID of the task to delete. Obtain this from list_tasks results.
-
     Returns:
         str: Confirmation message.
     """
@@ -640,14 +575,6 @@ async def move_task(
 ) -> str:
     """
     Move a task to a different position or parent within the same list, or to a different list.
-
-    Args:
-        user_google_email: The user's Google email address.
-        task_list_id: The ID of the current task list containing the task. Obtain this from list_task_lists results.
-        task_id: The ID of the task to move. Obtain this from list_tasks results.
-        parent: New parent task ID to make this task a subtask. Obtain the parent task ID from list_tasks results. If not provided, the task remains at the top level.
-        previous: Previous sibling task ID for positioning. The task will be moved to appear after this task. Obtain the previous task ID from list_tasks results. If not provided, the task is moved to the end.
-        destination_task_list: Destination task list ID for moving the task to a different list. Obtain this from list_task_lists results. If not provided, the task stays in the current list.
 
     Returns:
         str: Confirmation message with updated task details.
@@ -715,10 +642,6 @@ async def clear_completed_tasks(
 ) -> str:
     """
     Clear all completed tasks from a task list. The tasks will be marked as hidden.
-
-    Args:
-        user_google_email: The user's Google email address.
-        task_list_id: The ID of the task list to clear completed tasks from. Obtain this from list_task_lists results. WARNING: All completed tasks will be marked as hidden.
 
     Returns:
         str: Confirmation message.

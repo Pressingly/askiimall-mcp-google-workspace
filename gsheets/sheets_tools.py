@@ -31,10 +31,6 @@ async def list_spreadsheets(
     """
     Lists spreadsheets from Google Drive that the user has access to.
 
-    Args:
-        user_google_email: The user's Google email address.
-        max_results: Maximum number of spreadsheets to return. Defaults to 25.
-
     Returns:
         str: A formatted list of spreadsheet files (name, ID, modified time).
     """
@@ -79,10 +75,6 @@ async def get_spreadsheet_info(
 ) -> str:
     """
     Gets information about a specific spreadsheet including its sheets.
-
-    Args:
-        user_google_email: The user's Google email address.
-        spreadsheet_id: The ID of the spreadsheet to get info for. Obtain this from list_spreadsheets results.
 
     Returns:
         str: Formatted spreadsheet information including title and sheets list.
@@ -131,11 +123,6 @@ async def read_sheet_values(
     """
     Reads values from a specific range in a Google Sheet.
 
-    Args:
-        user_google_email: The user's Google email address.
-        spreadsheet_id: The ID of the spreadsheet. Obtain this from list_spreadsheets results.
-        range_name: The range to read in A1 notation. Examples: 'Sheet1!A1:D10' (specific sheet and range), 'A1:D10' (current sheet), 'A:Z' (entire columns A through Z). Defaults to 'A1:Z1000'.
-
     Returns:
         str: The formatted values from the specified range.
     """
@@ -183,14 +170,6 @@ async def modify_sheet_values(
 ) -> str:
     """
     Modifies values in a specific range of a Google Sheet - can write, update, or clear values.
-
-    Args:
-        user_google_email: The user's Google email address.
-        spreadsheet_id: The ID of the spreadsheet. Obtain this from list_spreadsheets results.
-        range_name: The range to modify in A1 notation. Examples: 'Sheet1!A1:D10' (specific sheet and range), 'A1:D10' (current sheet).
-        values: 2D array of values to write/update. Can be a JSON string or Python list of lists. Each inner list represents a row. Example: [['Header1', 'Header2'], ['Value1', 'Value2']]. Required unless clear_values=True.
-        value_input_option: How to interpret input values. Options: 'RAW' (values are stored exactly as entered, formulas are stored as text) or 'USER_ENTERED' (values are parsed as if typed into the UI, formulas are evaluated). Defaults to 'USER_ENTERED'.
-        clear_values: If True, clears the range instead of writing values. When True, the 'values' parameter is ignored. Defaults to False.
 
     Returns:
         str: Confirmation message of the successful modification operation.
@@ -269,11 +248,6 @@ async def create_spreadsheet(
     """
     Creates a new Google Spreadsheet.
 
-    Args:
-        user_google_email: The user's Google email address.
-        title: The title of the new spreadsheet.
-        sheet_names: List of sheet names to create. If not provided, creates one sheet with the default name 'Sheet1'. Example: ['Data', 'Summary', 'Charts'].
-
     Returns:
         str: Information about the newly created spreadsheet including ID and URL.
     """
@@ -317,11 +291,6 @@ async def create_sheet(
 ) -> str:
     """
     Creates a new sheet within an existing spreadsheet.
-
-    Args:
-        user_google_email: The user's Google email address.
-        spreadsheet_id: The ID of the spreadsheet to add a sheet to. Obtain this from list_spreadsheets results.
-        sheet_name: The name of the new sheet to create.
 
     Returns:
         str: Confirmation message of the successful sheet creation.

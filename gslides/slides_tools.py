@@ -29,10 +29,6 @@ async def create_presentation(
     """
     Create a new Google Slides presentation.
 
-    Args:
-        user_google_email: The user's Google email address.
-        title: The title for the new presentation. Defaults to 'Untitled Presentation'.
-
     Returns:
         str: Details about the created presentation including ID and URL.
     """
@@ -69,10 +65,6 @@ async def get_presentation(
 ) -> str:
     """
     Get details about a Google Slides presentation.
-
-    Args:
-        user_google_email: The user's Google email address.
-        presentation_id: The ID of the presentation to retrieve. Obtain this from the presentation's edit URL or from presentation creation results.
 
     Returns:
         str: Details about the presentation including title, slides count, and metadata.
@@ -118,11 +110,6 @@ async def batch_update_presentation(
 ) -> str:
     """
     Apply batch updates to a Google Slides presentation.
-
-    Args:
-        user_google_email: The user's Google email address.
-        presentation_id: The ID of the presentation to update. Obtain this from the presentation's edit URL or from presentation creation results.
-        requests: List of update requests to apply. Each request is a dictionary containing the operation type and parameters. Supported operations include creating slides, shapes, tables, inserting text, etc.
 
     Returns:
         str: Details about the batch update operation results.
@@ -175,11 +162,6 @@ async def get_page(
 ) -> str:
     """
     Get details about a specific page (slide) in a presentation.
-
-    Args:
-        user_google_email: The user's Google email address.
-        presentation_id: The ID of the presentation. Obtain this from the presentation's edit URL or from presentation creation results.
-        page_object_id: The object ID of the page/slide to retrieve. Obtain this from get_presentation results which lists all slides with their object IDs.
 
     Returns:
         str: Details about the specific page including elements and layout.
@@ -238,12 +220,6 @@ async def get_page_thumbnail(
 ) -> str:
     """
     Generate a thumbnail URL for a specific page (slide) in a presentation.
-
-    Args:
-        user_google_email: The user's Google email address.
-        presentation_id: The ID of the presentation. Obtain this from the presentation's edit URL or from presentation creation results.
-        page_object_id: The object ID of the page/slide. Obtain this from get_presentation results which lists all slides with their object IDs.
-        thumbnail_size: Size of thumbnail. Options: 'LARGE' (largest size), 'MEDIUM' (medium size), 'SMALL' (smallest size). Defaults to 'MEDIUM'.
 
     Returns:
         str: URL to the generated thumbnail image.

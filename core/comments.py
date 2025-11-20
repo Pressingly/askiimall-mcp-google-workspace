@@ -21,10 +21,6 @@ def create_comment_tools(app_name: str, file_id_param: str):
     """
     Factory function to create comment management tools for a specific Google Workspace app.
 
-    Args:
-        app_name: Name of the app (e.g., "document", "spreadsheet", "presentation")
-        file_id_param: Parameter name for the file ID (e.g., "document_id", "spreadsheet_id", "presentation_id")
-
     Returns:
         Dict containing the four comment management functions with unique names
     """

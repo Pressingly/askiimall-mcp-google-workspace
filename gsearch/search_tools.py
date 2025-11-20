@@ -39,20 +39,6 @@ async def search_custom(
     """
     Performs a search using Google Custom Search JSON API.
 
-    Args:
-        user_google_email: The user's Google email address.
-        q: The search query string.
-        num: Number of results to return. Must be between 1 and 10. Defaults to 10.
-        start: The index of the first result to return (1-based). Use this for pagination. Defaults to 1.
-        safe: Safe search level. Options: 'active' (strict filtering), 'moderate' (moderate filtering), 'off' (no filtering). Defaults to 'off'.
-        search_type: Search type. If set to 'image', searches for images. If None, performs a regular web search.
-        site_search: Restrict search to a specific site or domain. Example: 'example.com' or '*.edu'.
-        site_search_filter: Filter for site_search. Options: 'e' (exclude site_search results), 'i' (include only site_search results). Only used when site_search is provided.
-        date_restrict: Restrict results by date. Examples: 'd5' (past 5 days), 'w2' (past 2 weeks), 'm3' (past 3 months), 'y1' (past year).
-        file_type: Filter by file type. Examples: 'pdf', 'doc', 'xls', 'ppt', 'rtf', 'swf', 'ps'.
-        language: Language code for results. Examples: 'lang_en' (English), 'lang_es' (Spanish), 'lang_fr' (French).
-        country: Country code for results. Examples: 'countryUS' (United States), 'countryGB' (United Kingdom), 'countryCA' (Canada).
-
     Returns:
         str: Formatted search results including title, link, and snippet for each result.
     """
@@ -159,9 +145,6 @@ async def get_search_engine_info(
     """
     Retrieves metadata about a Programmable Search Engine.
 
-    Args:
-        user_google_email: The user's Google email address.
-
     Returns:
         str: Information about the search engine including its configuration and available refinements.
     """
@@ -231,14 +214,6 @@ async def search_custom_siterestrict(
 ) -> str:
     """
     Performs a search restricted to specific sites using Google Custom Search.
-
-    Args:
-        user_google_email: The user's Google email address.
-        q: The search query string.
-        sites: List of sites or domains to search within. Example: ['example.com', 'another-site.org']. The search will be restricted to these sites.
-        num: Number of results to return. Must be between 1 and 10. Defaults to 10.
-        start: The index of the first result to return (1-based). Use this for pagination. Defaults to 1.
-        safe: Safe search level. Options: 'active' (strict filtering), 'moderate' (moderate filtering), 'off' (no filtering). Defaults to 'off'.
 
     Returns:
         str: Formatted search results from the specified sites.

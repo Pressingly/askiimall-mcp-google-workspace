@@ -29,11 +29,6 @@ async def list_spaces(
     """
     Lists Google Chat spaces (rooms and direct messages) accessible to the user.
 
-    Args:
-        user_google_email: The user's Google email address.
-        page_size: Maximum number of spaces to return. Defaults to 100.
-        space_type: Type of spaces to list. Options: 'all' (all spaces), 'room' (chat rooms only), 'dm' (direct messages only). Defaults to 'all'.
-
     Returns:
         str: A formatted list of Google Chat spaces accessible to the user.
     """
@@ -79,13 +74,6 @@ async def get_messages(
 ) -> str:
     """
     Retrieves messages from a Google Chat space.
-
-    Args:
-        user_google_email: The user's Google email address.
-        space_id: The ID of the Google Chat space to retrieve messages from. Obtain this from list_spaces results.
-        page_size: Maximum number of messages to return. Defaults to 50.
-        order_by: Order in which to return messages. Options: 'createTime desc' (newest first), 'createTime asc' (oldest first). Defaults to 'createTime desc'.
-
     Returns:
         str: Formatted messages from the specified space.
     """
@@ -135,13 +123,6 @@ async def send_message(
 ) -> str:
     """
     Sends a message to a Google Chat space.
-
-    Args:
-        user_google_email: The user's Google email address.
-        space_id: The ID of the Google Chat space to send the message to. Obtain this from list_spaces results.
-        message_text: The text content of the message to send.
-        thread_key: Thread key for replying to a specific thread. If provided, the message will be sent as a reply in that thread. If not provided, sends a new message.
-
     Returns:
         str: Confirmation message with sent message details.
     """
@@ -182,13 +163,7 @@ async def search_messages(
 ) -> str:
     """
     Searches for messages in Google Chat spaces by text content.
-
-    Args:
-        user_google_email: The user's Google email address.
-        query: The search query string to match against message text content.
-        space_id: The ID of a specific Google Chat space to search within. If not provided, searches across all accessible spaces (limited to first 10 spaces). Obtain space IDs from list_spaces results.
-        page_size: Maximum number of messages to return per space. Defaults to 25.
-
+    
     Returns:
         str: A formatted list of messages matching the search query.
     """

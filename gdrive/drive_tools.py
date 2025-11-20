@@ -45,14 +45,7 @@ def _build_drive_list_params(
 ) -> Dict[str, Any]:
     """
     Helper function to build common list parameters for Drive API calls.
-
-    Args:
-        query: The search query string
-        page_size: Maximum number of items to return
-        drive_id: Optional shared drive ID
-        include_items_from_all_drives: Whether to include items from all drives
-        corpora: Optional corpus specification
-
+    
     Returns:
         Dictionary of parameters for Drive API list calls
     """
@@ -89,14 +82,6 @@ async def search_drive_files(
 ) -> str:
     """
     Searches for files and folders within a user's Google Drive, including shared drives.
-
-    Args:
-        user_google_email: The user's Google email address.
-        query: The search query string. Supports Google Drive search operators (e.g., "name contains 'report'", "mimeType='application/vnd.google-apps.document'", "'folder_id' in parents").
-        page_size: The maximum number of files to return. Defaults to 10.
-        drive_id: ID of the shared drive to search. If None, behavior depends on `corpora` and `include_items_from_all_drives`.
-        include_items_from_all_drives: Whether shared drive items should be included in results. Defaults to True. This is effective when not specifying a `drive_id`.
-        corpora: Bodies of items to query. Options: 'user' (My Drive only), 'domain' (domain-wide), 'drive' (specific shared drive), 'allDrives' (all accessible). If 'drive_id' is specified and 'corpora' is None, it defaults to 'drive'. Prefer 'user' or 'drive' over 'allDrives' for efficiency.
 
     Returns:
         str: A formatted list of found files/folders with their details (ID, name, type, size, modified time, link).
@@ -155,11 +140,7 @@ async def get_drive_file_content(
     • Office files (.docx, .xlsx, .pptx) → unzipped & parsed with std-lib to
       extract readable text.
     • Any other file → downloaded; tries UTF-8 decode, else notes binary.
-
-    Args:
-        user_google_email: The user's Google email address.
-        file_id: The Google Drive file ID. Can be obtained from search_drive_files or list_drive_items results.
-
+    
     Returns:
         str: The file content as plain text with metadata header.
     """
@@ -246,15 +227,7 @@ async def list_drive_items(
     Lists files and folders, supporting shared drives.
     If `drive_id` is specified, lists items within that shared drive. `folder_id` is then relative to that drive (or use drive_id as folder_id for root).
     If `drive_id` is not specified, lists items from user's "My Drive" and accessible shared drives (if `include_items_from_all_drives` is True).
-
-    Args:
-        user_google_email: The user's Google email address.
-        folder_id: The ID of the Google Drive folder. Use 'root' for the root of My Drive. For a shared drive, this can be the shared drive's ID to list its root, or a folder ID within that shared drive.
-        page_size: The maximum number of items to return. Defaults to 100.
-        drive_id: ID of the shared drive. If provided, the listing is scoped to this drive. If not provided, lists items from user's 'My Drive' and accessible shared drives (if include_items_from_all_drives is True).
-        include_items_from_all_drives: Whether items from all accessible shared drives should be included if drive_id is not set. Defaults to True.
-        corpora: Corpus to query. Options: 'user' (My Drive only), 'drive' (specific shared drive), 'allDrives' (all accessible). If drive_id is set and corpora is None, 'drive' is used. If None and no drive_id, API defaults apply.
-
+    
     Returns:
         str: A formatted list of files/folders in the specified folder.
     """
@@ -301,15 +274,7 @@ async def create_drive_file(
     """
     Creates a new file in Google Drive, supporting creation within shared drives.
     Accepts either direct content or a fileUrl to fetch the content from.
-
-    Args:
-        user_google_email: The user's Google email address.
-        file_name: The name for the new file.
-        content: The content to write to the file. Either 'content' or 'fileUrl' must be provided.
-        folder_id: The ID of the parent folder. Use 'root' for the root of My Drive. For shared drives, this must be a folder ID within the shared drive.
-        mime_type: The MIME type of the file. Examples: 'text/plain', 'text/html', 'application/json', 'image/png'. Defaults to 'text/plain'. If fileUrl is provided, the MIME type may be automatically detected from the Content-Type header.
-        fileUrl: Public URL to fetch the file content from. Either 'content' or 'fileUrl' must be provided. The file will be downloaded from this URL and uploaded to Google Drive.
-
+    
     Returns:
         str: Confirmation message of the successful file creation with file link.
     """

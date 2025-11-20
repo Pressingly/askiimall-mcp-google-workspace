@@ -60,11 +60,6 @@ async def search_docs(
     """
     Searches for Google Docs by name using Drive API (mimeType filter).
 
-    Args:
-        user_google_email: The user's Google email address.
-        query: Search query string to match against document names. Supports partial matches.
-        page_size: Maximum number of documents to return. Defaults to 10.
-
     Returns:
         str: A formatted list of Google Docs matching the search query.
     """
@@ -106,10 +101,6 @@ async def get_doc_content(
     Retrieves content of a Google Doc or a Drive file (like .docx) identified by document_id.
     - Native Google Docs: Fetches content via Docs API.
     - Office files (.docx, etc.) stored in Drive: Downloads via Drive API and extracts text.
-
-    Args:
-        user_google_email: The user's Google email address.
-        document_id: The ID of the Google Doc or Drive file to retrieve. For Google Docs, obtain this from search_docs or list_docs_in_folder results. For Office files (.docx, etc.), use the Drive file ID.
 
     Returns:
         str: The document content with metadata header.
@@ -265,11 +256,6 @@ async def list_docs_in_folder(
     """
     Lists Google Docs within a specific Drive folder.
 
-    Args:
-        user_google_email: The user's Google email address.
-        folder_id: The ID of the Drive folder to list documents from. Use 'root' for the root of My Drive. Folder IDs can be obtained from Drive search or list operations.
-        page_size: Maximum number of documents to return. Defaults to 100.
-
     Returns:
         str: A formatted list of Google Docs in the specified folder.
     """
@@ -301,11 +287,6 @@ async def create_doc(
 ) -> str:
     """
     Creates a new Google Doc and optionally inserts initial content.
-
-    Args:
-        user_google_email: The user's Google email address.
-        title: The title of the new Google Doc.
-        content: Optional initial content to insert into the document. If not provided, creates an empty document.
 
     Returns:
         str: Confirmation message with document ID and link.
@@ -341,18 +322,6 @@ async def modify_doc_text(
 ) -> str:
     """
     Modifies text in a Google Doc - can insert/replace text and/or apply formatting in a single operation.
-
-    Args:
-        user_google_email: The user's Google email address.
-        document_id: The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results.
-        start_index: Start position for the operation (0-based index). Index 0 is the beginning of the document. Use get_doc_content to find the appropriate index.
-        end_index: End position for text replacement or formatting. If not provided with 'text', text is inserted at 'start_index'. Required when applying formatting to existing text.
-        text: New text to insert or replace with. If provided with 'end_index', replaces text in that range. If provided without 'end_index', inserts text at 'start_index'. Optional if only applying formatting.
-        bold: Whether to make text bold. Options: True (bold), False (not bold), None (leave unchanged).
-        italic: Whether to make text italic. Options: True (italic), False (not italic), None (leave unchanged).
-        underline: Whether to underline text. Options: True (underlined), False (not underlined), None (leave unchanged).
-        font_size: Font size in points (e.g., 12, 14, 16). If None, leaves font size unchanged.
-        font_family: Font family name (e.g., 'Arial', 'Times New Roman', 'Calibri'). If None, leaves font family unchanged.
 
     Returns:
         str: Confirmation message with operation details
@@ -475,13 +444,6 @@ async def find_and_replace_doc(
     """
     Finds and replaces text throughout a Google Doc.
 
-    Args:
-        user_google_email: The user's Google email address.
-        document_id: The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results.
-        find_text: The text to search for. All occurrences of this text will be replaced.
-        replace_text: The text to replace 'find_text' with. Can be an empty string to remove the found text.
-        match_case: Whether to match case exactly. If True, 'Hello' will not match 'hello'. If False, case is ignored. Defaults to False.
-
     Returns:
         str: Confirmation message with replacement count
     """
@@ -523,16 +485,6 @@ async def insert_doc_elements(
 ) -> str:
     """
     Inserts structural elements like tables, lists, or page breaks into a Google Doc.
-
-    Args:
-        user_google_email: The user's Google email address.
-        document_id: The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results.
-        element_type: Type of element to insert. Options: 'table' (inserts a table), 'list' (inserts a bulleted or numbered list), 'page_break' (inserts a page break).
-        index: Position to insert element (0-based index). Index 0 is the beginning of the document. Use get_doc_content to find the appropriate index.
-        rows: Number of rows for table. Required when element_type is 'table'. Ignored for other element types.
-        columns: Number of columns for table. Required when element_type is 'table'. Ignored for other element types.
-        list_type: Type of list. Options: 'UNORDERED' (bulleted list), 'ORDERED' (numbered list). Required when element_type is 'list'. Ignored for other element types.
-        text: Initial text content for list items. Used when element_type is 'list'. If not provided, defaults to 'List item'. Ignored for other element types.
 
     Returns:
         str: Confirmation message with insertion details
@@ -604,14 +556,6 @@ async def insert_doc_image(
     """
     Inserts an image into a Google Doc from Drive or a URL.
 
-    Args:
-        user_google_email: The user's Google email address.
-        document_id: The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results.
-        image_source: Source of the image. Can be a Google Drive file ID (for images stored in Drive) or a public image URL (must start with 'http://' or 'https://').
-        index: Position to insert image (0-based index). Index 0 is the beginning of the document. Use get_doc_content to find the appropriate index.
-        width: Image width in points. If not provided, the image will use its natural width. If only width is provided, height will be scaled proportionally.
-        height: Image height in points. If not provided, the image will use its natural height. If only height is provided, width will be scaled proportionally.
-
     Returns:
         str: Confirmation message with insertion details
     """
@@ -678,13 +622,6 @@ async def update_doc_headers_footers(
     """
     Updates headers or footers in a Google Doc.
 
-    Args:
-        user_google_email: The user's Google email address.
-        document_id: The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results.
-        section_type: Type of section to update. Options: 'header' (updates header), 'footer' (updates footer).
-        content: Text content for the header or footer.
-        header_footer_type: Type of header/footer. Options: 'DEFAULT' (applies to all pages), 'FIRST_PAGE_ONLY' (applies only to first page), 'EVEN_PAGE' (applies only to even-numbered pages). Defaults to 'DEFAULT'.
-
     Returns:
         str: Confirmation message with update details
     """
@@ -729,11 +666,6 @@ async def batch_update_doc(
 ) -> str:
     """
     Executes multiple document operations in a single atomic batch update.
-
-    Args:
-        user_google_email: The user's Google email address.
-        document_id: The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results.
-        operations: List of operation dictionaries to execute in a single batch. Each operation should contain: 'type' (operation type) and operation-specific parameters. Supported types: 'insert_text', 'delete_text', 'replace_text', 'format_text', 'insert_table', 'insert_page_break'. Example: [{'type': 'insert_text', 'index': 1, 'text': 'Hello'}, {'type': 'format_text', 'start_index': 1, 'end_index': 6, 'bold': True}]
 
     Returns:
         str: Confirmation message with batch operation results
@@ -796,12 +728,7 @@ async def inspect_doc_structure(
     Step 1: Call this function
     Step 2: Note the "total_length" value
     Step 3: Use an index < total_length for table insertion
-    Step 4: Create your table
-
-    Args:
-        user_google_email: The user's Google email address.
-        document_id: The ID of the document to inspect. Obtain this from search_docs or list_docs_in_folder results.
-        detailed: Whether to return detailed structure information. If True, returns full element details. If False, returns basic analysis. Defaults to False.
+    Step 4: Create your table.
 
     Returns:
         str: JSON string containing document structure and safe insertion indices
@@ -921,14 +848,7 @@ async def create_table_with_data(
     - Each inner list = one table row
     - All rows MUST have same number of columns
     - Use empty strings "" for empty cells, never None
-    - Use debug_table_structure after creation to verify results
-
-    Args:
-        user_google_email: The user's Google email address.
-        document_id: The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results.
-        table_data: 2D list of strings representing table data. Each inner list is one row. First row typically contains headers.
-        index: Document position for table insertion (0-based index). CRITICAL: Always get this from inspect_doc_structure 'total_length' field.
-        bold_headers: Whether to make the first row bold. If True, the first row will be formatted as bold headers. Defaults to True.
+    - Use debug_table_structure after creation to verify results.
 
     Returns:
         str: Confirmation with table details and link
@@ -1011,12 +931,7 @@ async def debug_table_structure(
     1. After creating table → Use this to verify structure
     2. Before populating → Use this to plan your data format
     3. After population fails → Use this to see what went wrong
-    4. When debugging → Compare your data array to actual table structure
-
-    Args:
-        user_google_email: The user's Google email address.
-        document_id: The ID of the document to inspect. Obtain this from search_docs or list_docs_in_folder results.
-        table_index: Which table to debug. Use 0 for the first table, 1 for the second table, etc. Defaults to 0.
+    4. When debugging → Compare your data array to actual table structure.
 
     Returns:
         str: Detailed JSON structure showing table layout, cell positions, and current content

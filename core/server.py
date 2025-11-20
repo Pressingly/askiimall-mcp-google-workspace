@@ -210,10 +210,6 @@ async def start_google_auth(
     In most cases, simply try calling the Google Workspace tool you need - it will
     automatically handle authentication if required.
 
-    Args:
-        service_name: Name of the Google service to authenticate (e.g., 'Gmail', 'Google Calendar', 'Google Drive').
-        user_google_email: The user's Google email address. If not provided, uses the default from environment configuration.
-
     Returns:
         str: Authentication URL and instructions for completing the OAuth flow.
     """
