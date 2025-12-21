@@ -95,7 +95,7 @@ async def get_doc_content(
     drive_service,
     docs_service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    document_id: str = Field(..., description="The ID of the Google Doc or Drive file to retrieve. For Google Docs, obtain this from search_docs or list_docs_in_folder results. For Office files (.docx, etc.), use the Drive file ID."),
+    document_id: str = Field(..., description="The ID of the Google Doc or Drive file to retrieve. For Google Docs, use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it. For Office files (.docx, etc.), use the Drive file ID."),
 ) -> str:
     """
     Retrieves content of a Google Doc or a Drive file (like .docx) identified by document_id.
@@ -250,7 +250,7 @@ async def get_doc_content(
 async def list_docs_in_folder(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    folder_id: str = Field('root', description="The ID of the Drive folder to list documents from. Use 'root' for the root of My Drive. Folder IDs can be obtained from Drive search or list operations."),
+    folder_id: str = Field('root', description="The ID of the Drive folder to list documents from. Use 'root' for the root of My Drive. Use the FULL ID exactly from Drive search or list operations - do NOT truncate or modify it."),
     page_size: int = Field(100, description="Maximum number of documents to return. Defaults to 100.")
 ) -> str:
     """
@@ -310,7 +310,7 @@ async def create_doc(
 async def modify_doc_text(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    document_id: str = Field(..., description="The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results."),
+    document_id: str = Field(..., description="The ID of the document to update. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
     start_index: int = Field(..., description="Start position for the operation (0-based index). Index 0 is the beginning of the document. Use get_doc_content to find the appropriate index."),
     end_index: int = Field(None, description="End position for text replacement or formatting. If not provided with 'text', text is inserted at 'start_index'. Required when applying formatting to existing text."),
     text: str = Field(None, description="New text to insert or replace with. If provided with 'end_index', replaces text in that range. If provided without 'end_index', inserts text at 'start_index'. Optional if only applying formatting."),
@@ -436,7 +436,7 @@ async def modify_doc_text(
 async def find_and_replace_doc(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    document_id: str = Field(..., description="The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results."),
+    document_id: str = Field(..., description="The ID of the document to update. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
     find_text: str = Field(..., description="The text to search for. All occurrences of this text will be replaced."),
     replace_text: str = Field(..., description="The text to replace 'find_text' with. Can be an empty string to remove the found text."),
     match_case: bool = Field(False, description="Whether to match case exactly. If True, 'Hello' will not match 'hello'. If False, case is ignored. Defaults to False."),
@@ -475,7 +475,7 @@ async def find_and_replace_doc(
 async def insert_doc_elements(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    document_id: str = Field(..., description="The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results."),
+    document_id: str = Field(..., description="The ID of the document to update. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
     element_type: str = Field(..., description="Type of element to insert. Options: 'table' (inserts a table), 'list' (inserts a bulleted or numbered list), 'page_break' (inserts a page break)."),
     index: int = Field(..., description="Position to insert element (0-based index). Index 0 is the beginning of the document. Use get_doc_content to find the appropriate index."),
     rows: int = Field(None, description="Number of rows for table. Required when element_type is 'table'. Ignored for other element types."),
@@ -547,7 +547,7 @@ async def insert_doc_image(
     docs_service,
     drive_service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    document_id: str = Field(..., description="The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results."),
+    document_id: str = Field(..., description="The ID of the document to update. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
     image_source: str = Field(..., description="Source of the image. Can be a Google Drive file ID (for images stored in Drive) or a public image URL (must start with 'http://' or 'https://')."),
     index: int = Field(..., description="Position to insert image (0-based index). Index 0 is the beginning of the document. Use get_doc_content to find the appropriate index."),
     width: int = Field(None, description="Image width in points. If not provided, the image will use its natural width. If only width is provided, height will be scaled proportionally."),
@@ -614,7 +614,7 @@ async def insert_doc_image(
 async def update_doc_headers_footers(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    document_id: str = Field(..., description="The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results."),
+    document_id: str = Field(..., description="The ID of the document to update. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
     section_type: str = Field(..., description="Type of section to update. Options: 'header' (updates header), 'footer' (updates footer)."),
     content: str = Field(..., description="Text content for the header or footer."),
     header_footer_type: str = Field("DEFAULT", description="Type of header/footer. Options: 'DEFAULT' (applies to all pages), 'FIRST_PAGE_ONLY' (applies only to first page), 'EVEN_PAGE' (applies only to even-numbered pages). Defaults to 'DEFAULT'."),
@@ -661,7 +661,7 @@ async def update_doc_headers_footers(
 async def batch_update_doc(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    document_id: str = Field(..., description="The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results."),
+    document_id: str = Field(..., description="The ID of the document to update. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
     operations: list = Field(..., description="List of operation dictionaries to execute in a single batch. Each operation should contain: 'type' (operation type) and operation-specific parameters. Supported types: 'insert_text', 'delete_text', 'replace_text', 'format_text', 'insert_table', 'insert_page_break'. Example: [{'type': 'insert_text', 'index': 1, 'text': 'Hello'}, {'type': 'format_text', 'start_index': 1, 'end_index': 6, 'bold': True}]"),
 ) -> str:
     """
@@ -703,7 +703,7 @@ async def batch_update_doc(
 async def inspect_doc_structure(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    document_id: str = Field(..., description="The ID of the document to inspect. Obtain this from search_docs or list_docs_in_folder results."),
+    document_id: str = Field(..., description="The ID of the document to inspect. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
     detailed: bool = Field(False, description="Whether to return detailed structure information. If True, returns full element details. If False, returns basic analysis. Defaults to False."),
 ) -> str:
     """
@@ -814,7 +814,7 @@ async def inspect_doc_structure(
 async def create_table_with_data(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    document_id: str = Field(..., description="The ID of the document to update. Obtain this from search_docs or list_docs_in_folder results."),
+    document_id: str = Field(..., description="The ID of the document to update. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
     table_data: list = Field(..., description="2D list of strings representing table data. Each inner list is one row. First row typically contains headers. Example: [['Header1', 'Header2'], ['Data1', 'Data2'], ['Data3', 'Data4']]. All rows must have the same number of columns. Use empty strings '' for empty cells."),
     index: int = Field(..., description="Document position for table insertion (0-based index). CRITICAL: Always get this from inspect_doc_structure 'total_length' field. Never use arbitrary index values."),
     bold_headers: bool = Field(True, description="Whether to make the first row bold. If True, the first row will be formatted as bold headers. Defaults to True."),
@@ -901,7 +901,7 @@ async def create_table_with_data(
 async def debug_table_structure(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    document_id: str = Field(..., description="The ID of the document to inspect. Obtain this from search_docs or list_docs_in_folder results."),
+    document_id: str = Field(..., description="The ID of the document to inspect. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
     table_index: int = Field(0, description="Which table to debug. Use 0 for the first table, 1 for the second table, etc. Defaults to 0."),
 ) -> str:
     """

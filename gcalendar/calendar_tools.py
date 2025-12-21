@@ -197,7 +197,7 @@ async def list_calendars(
 async def get_events(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    calendar_id: str = Field("primary", description="The ID of the calendar to query. Use 'primary' for the user's primary calendar. Calendar IDs can be obtained using list_calendars."),
+    calendar_id: str = Field("primary", description="The ID of the calendar to query. Use 'primary' for the user's primary calendar. Use the FULL ID exactly from list_calendars - do NOT truncate or modify it."),
     time_min: Optional[str] = Field(None, description="The start of the time range (inclusive) in RFC3339 format. Examples: '2024-05-12T10:00:00Z' (with time) or '2024-05-12' (date only). If omitted, defaults to the current time."),
     time_max: Optional[str] = Field(None, description="The end of the time range (exclusive) in RFC3339 format. Examples: '2024-05-13T10:00:00Z' (with time) or '2024-05-13' (date only). If omitted, events starting from time_min onwards are considered (up to max_results)."),
     max_results: int = Field(25, description="The maximum number of events to return. Defaults to 25."),
@@ -289,7 +289,7 @@ async def create_event(
     summary: str = Field(..., description="Event title or summary."),
     start_time: str = Field(..., description="Start time in RFC3339 format. Examples: '2023-10-27T10:00:00-07:00' (with time) or '2023-10-27' (all-day event)."),
     end_time: str = Field(..., description="End time in RFC3339 format. Examples: '2023-10-27T11:00:00-07:00' (with time) or '2023-10-28' (all-day event)."),
-    calendar_id: str = Field("primary", description="Calendar ID. Use 'primary' for the user's primary calendar. Calendar IDs can be obtained using list_calendars."),
+    calendar_id: str = Field("primary", description="Calendar ID. Use 'primary' for the user's primary calendar. Use the FULL ID exactly from list_calendars - do NOT truncate or modify it."),
     description: Optional[str] = Field(None, description="Event description or notes."),
     location: Optional[str] = Field(None, description="Event location (e.g., 'Conference Room A', '123 Main St, City, State')."),
     attendees: Optional[List[str]] = Field(None, description="List of attendee email addresses to invite to the event."),
@@ -421,8 +421,9 @@ async def create_event(
                 conferenceDataVersion=1 if add_google_meet else 0
             ).execute()
         )
+    event_id = created_event.get("id", "No ID")
     link = created_event.get("htmlLink", "No link available")
-    confirmation_message = f"Successfully created event '{created_event.get('summary', summary)}' for {user_google_email}. Link: {link}"
+    confirmation_message = f"Successfully created event '{created_event.get('summary', summary)}' (ID: {event_id}) for {user_google_email}. Link: {link}"
 
     # Add Google Meet information if conference was created
     if add_google_meet and "conferenceData" in created_event:
@@ -447,7 +448,7 @@ async def create_event(
 async def modify_event(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    event_id: str = Field(..., description="The ID of the event to modify. Obtain this from get_events or get_event results."),
+    event_id: str = Field(..., description="The ID of the event to modify. Use the FULL ID exactly from get_events, get_event, or create_event - do NOT truncate or modify it."),
     calendar_id: str = Field("primary", description="Calendar ID. Use 'primary' for the user's primary calendar. Calendar IDs can be obtained using list_calendars."),
     summary: Optional[str] = Field(None, description="New event title. If not provided, the existing title is preserved."),
     start_time: Optional[str] = Field(None, description="New start time in RFC3339 format. Examples: '2023-10-27T10:00:00-07:00' (with time) or '2023-10-27' (all-day). If not provided, the existing start time is preserved."),
@@ -561,7 +562,9 @@ async def modify_event(
             "summary": summary,
             "description": description,
             "location": location,
-            "attendees": attendees
+            "attendees": attendees,
+            "start": start_time,
+            "end": end_time
         })
 
         # Handle Google Meet conference data
@@ -634,7 +637,7 @@ async def modify_event(
 async def delete_event(
     service, 
     user_google_email: str = Field(..., description="The user's Google email address."),
-    event_id: str = Field(..., description="The ID of the event to delete. Obtain this from get_events or get_event results."),
+    event_id: str = Field(..., description="The ID of the event to delete. Use the FULL ID exactly from get_events, get_event, or create_event - do NOT truncate or modify it."),
     calendar_id: str = Field("primary", description="Calendar ID. Use 'primary' for the user's primary calendar. Calendar IDs can be obtained using list_calendars.")
 ) -> str:
     """

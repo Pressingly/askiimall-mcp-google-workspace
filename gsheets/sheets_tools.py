@@ -71,7 +71,7 @@ async def list_spreadsheets(
 async def get_spreadsheet_info(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet to get info for. Obtain this from list_spreadsheets results."),
+    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet to get info for. Use the FULL ID exactly from list_spreadsheets or create_spreadsheet - do NOT truncate or modify it."),
 ) -> str:
     """
     Gets information about a specific spreadsheet including its sheets.
@@ -117,7 +117,7 @@ async def get_spreadsheet_info(
 async def read_sheet_values(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet. Obtain this from list_spreadsheets results."),
+    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet. Use the FULL ID exactly from list_spreadsheets or create_spreadsheet - do NOT truncate or modify it."),
     range_name: str = Field("A1:Z1000", description="The range to read in A1 notation. Examples: 'Sheet1!A1:D10' (specific sheet and range), 'A1:D10' (current sheet), 'A:Z' (entire columns A through Z). Defaults to 'A1:Z1000'."),
 ) -> str:
     """
@@ -162,9 +162,9 @@ async def read_sheet_values(
 async def modify_sheet_values(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet. Obtain this from list_spreadsheets results."),
+    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet. Use the FULL ID exactly from list_spreadsheets or create_spreadsheet - do NOT truncate or modify it."),
     range_name: str = Field(..., description="The range to modify in A1 notation. Examples: 'Sheet1!A1:D10' (specific sheet and range), 'A1:D10' (current sheet)."),
-    values: Optional[Union[str, List[List[str]]]] = Field(None, description="2D array of values to write/update. Can be a JSON string or Python list of lists. Each inner list represents a row. Example: [['Header1', 'Header2'], ['Value1', 'Value2']]. Required unless clear_values=True."),
+    values: Optional[List[List[str]]] = Field(None, description="2D array of values to write/update. Can be a Python list of lists. Each inner list represents a row. Example: [['Header1', 'Header2'], ['Value1', 'Value2']]. Required unless clear_values=True."),
     value_input_option: str = Field("USER_ENTERED", description="How to interpret input values. Options: 'RAW' (values are stored exactly as entered, formulas are stored as text) or 'USER_ENTERED' (values are parsed as if typed into the UI, formulas are evaluated). Defaults to 'USER_ENTERED'."),
     clear_values: bool = Field(False, description="If True, clears the range instead of writing values. When True, the 'values' parameter is ignored. Defaults to False."),
 ) -> str:
@@ -286,7 +286,7 @@ async def create_spreadsheet(
 async def create_sheet(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet to add a sheet to. Obtain this from list_spreadsheets results."),
+    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet to add a sheet to. Use the FULL ID exactly from list_spreadsheets or create_spreadsheet - do NOT truncate or modify it."),
     sheet_name: str = Field(..., description="The name of the new sheet to create."),
 ) -> str:
     """

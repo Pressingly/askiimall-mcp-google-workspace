@@ -68,7 +68,7 @@ async def list_spaces(
 async def get_messages(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    space_id: str = Field(..., description="The ID of the Google Chat space to retrieve messages from. Obtain this from list_spaces results."),
+    space_id: str = Field(..., description="The ID of the Google Chat space to retrieve messages from. Use the FULL ID exactly from list_spaces - do NOT truncate or modify it."),
     page_size: int = Field(50, description="Maximum number of messages to return. Defaults to 50."),
     order_by: str = Field("createTime desc", description="Order in which to return messages. Options: 'createTime desc' (newest first), 'createTime asc' (oldest first). Defaults to 'createTime desc'."),
 ) -> str:
@@ -117,7 +117,7 @@ async def get_messages(
 async def send_message(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    space_id: str = Field(..., description="The ID of the Google Chat space to send the message to. Obtain this from list_spaces results."),
+    space_id: str = Field(..., description="The ID of the Google Chat space to send the message to. Use the FULL ID exactly from list_spaces - do NOT truncate or modify it."),
     message_text: str = Field(..., description="The text content of the message to send."),
     thread_key: Optional[str] = Field(None, description="Thread key for replying to a specific thread. If provided, the message will be sent as a reply in that thread. If not provided, sends a new message."),
 ) -> str:

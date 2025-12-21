@@ -79,7 +79,7 @@ async def list_task_lists(
 async def get_task_list(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    task_list_id: str = Field(..., description="The ID of the task list to retrieve. Obtain this from list_task_lists results."),
+    task_list_id: str = Field(..., description="The ID of the task list to retrieve. Use the FULL ID exactly from list_task_lists or create_task_list - do NOT truncate or modify it."),
 ) -> str:
     """
     Get details of a specific task list.
@@ -163,7 +163,7 @@ async def create_task_list(
 async def update_task_list(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    task_list_id: str = Field(..., description="The ID of the task list to update. Obtain this from list_task_lists results."),
+    task_list_id: str = Field(..., description="The ID of the task list to update. Use the FULL ID exactly from list_task_lists or create_task_list - do NOT truncate or modify it."),
     title: str = Field(..., description="The new title for the task list."),
 ) -> str:
     """
@@ -208,7 +208,7 @@ async def update_task_list(
 async def delete_task_list(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    task_list_id: str = Field(..., description="The ID of the task list to delete. Obtain this from list_task_lists results. WARNING: This will also delete all tasks in the list."),
+    task_list_id: str = Field(..., description="The ID of the task list to delete. Use the FULL ID exactly from list_task_lists or create_task_list - do NOT truncate or modify it. WARNING: This will also delete all tasks in the list."),
 ) -> str:
     """
     Delete a task list. Note: This will also delete all tasks in the list.
@@ -244,7 +244,7 @@ async def delete_task_list(
 async def list_tasks(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    task_list_id: str = Field(..., description="The ID of the task list to retrieve tasks from. Obtain this from list_task_lists results."),
+    task_list_id: str = Field(..., description="The ID of the task list to retrieve tasks from. Use the FULL ID exactly from list_task_lists or create_task_list - do NOT truncate or modify it."),
     max_results: Optional[int] = Field(None, description="Maximum number of tasks to return. Defaults to 20, maximum is 100."),
     page_token: Optional[str] = Field(None, description="Token for retrieving the next page of results. Use the 'next_page_token' from the previous response to get more results."),
     show_completed: Optional[bool] = Field(None, description="Whether to include completed tasks. If True, includes completed tasks. If False, excludes them. If None, uses default (True)."),
@@ -335,8 +335,8 @@ async def list_tasks(
 async def get_task(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    task_list_id: str = Field(..., description="The ID of the task list containing the task. Obtain this from list_task_lists results."),
-    task_id: str = Field(..., description="The ID of the task to retrieve. Obtain this from list_tasks results."),
+    task_list_id: str = Field(..., description="The ID of the task list containing the task. Use the FULL ID exactly from list_task_lists or create_task_list - do NOT truncate or modify it."),
+    task_id: str = Field(..., description="The ID of the task to retrieve. Use the FULL ID exactly from list_tasks or create_task - do NOT truncate or modify it."),
 ) -> str:
     """
     Get details of a specific task.
@@ -391,7 +391,7 @@ async def get_task(
 async def create_task(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    task_list_id: str = Field(..., description="The ID of the task list to create the task in. Obtain this from list_task_lists results."),
+    task_list_id: str = Field(..., description="The ID of the task list to create the task in. Use the FULL ID exactly from list_task_lists or create_task_list - do NOT truncate or modify it."),
     title: str = Field(..., description="The title of the task."),
     notes: Optional[str] = Field(None, description="Notes or description for the task."),
     due: Optional[str] = Field(None, description="Due date in RFC 3339 timestamp format (e.g., '2024-12-31T23:59:59Z' or '2024-12-31')."),
@@ -457,8 +457,8 @@ async def create_task(
 async def update_task(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    task_list_id: str = Field(..., description="The ID of the task list containing the task. Obtain this from list_task_lists results."),
-    task_id: str = Field(..., description="The ID of the task to update. Obtain this from list_tasks results."),
+    task_list_id: str = Field(..., description="The ID of the task list containing the task. Use the FULL ID exactly from list_task_lists or create_task_list - do NOT truncate or modify it."),
+    task_id: str = Field(..., description="The ID of the task to update. Use the FULL ID exactly from list_tasks or create_task - do NOT truncate or modify it."),
     title: Optional[str] = Field(None, description="New title for the task. If not provided, the existing title is preserved."),
     notes: Optional[str] = Field(None, description="New notes or description for the task. If not provided, the existing notes are preserved."),
     status: Optional[str] = Field(None, description="New status for the task. Options: 'needsAction' (task is not completed), 'completed' (task is completed). If not provided, the existing status is preserved."),
@@ -530,8 +530,8 @@ async def update_task(
 async def delete_task(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    task_list_id: str = Field(..., description="The ID of the task list containing the task. Obtain this from list_task_lists results."),
-    task_id: str = Field(..., description="The ID of the task to delete. Obtain this from list_tasks results."),
+    task_list_id: str = Field(..., description="The ID of the task list containing the task. Use the FULL ID exactly from list_task_lists or create_task_list - do NOT truncate or modify it."),
+    task_id: str = Field(..., description="The ID of the task to delete. Use the FULL ID exactly from list_tasks or create_task - do NOT truncate or modify it."),
 ) -> str:
     """
     Delete a task from a task list.
@@ -567,8 +567,8 @@ async def delete_task(
 async def move_task(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    task_list_id: str = Field(..., description="The ID of the current task list containing the task. Obtain this from list_task_lists results."),
-    task_id: str = Field(..., description="The ID of the task to move. Obtain this from list_tasks results."),
+    task_list_id: str = Field(..., description="The ID of the current task list containing the task. Use the FULL ID exactly from list_task_lists or create_task_list - do NOT truncate or modify it."),
+    task_id: str = Field(..., description="The ID of the task to move. Use the FULL ID exactly from list_tasks or create_task - do NOT truncate or modify it."),
     parent: Optional[str] = Field(None, description="New parent task ID to make this task a subtask. Obtain the parent task ID from list_tasks results. If not provided, the task remains at the top level."),
     previous: Optional[str] = Field(None, description="Previous sibling task ID for positioning. The task will be moved to appear after this task. Obtain the previous task ID from list_tasks results. If not provided, the task is moved to the end."),
     destination_task_list: Optional[str] = Field(None, description="Destination task list ID for moving the task to a different list. Obtain this from list_task_lists results. If not provided, the task stays in the current list."),
@@ -638,7 +638,7 @@ async def move_task(
 async def clear_completed_tasks(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    task_list_id: str = Field(..., description="The ID of the task list to clear completed tasks from. Obtain this from list_task_lists results. WARNING: All completed tasks will be marked as hidden."),
+    task_list_id: str = Field(..., description="The ID of the task list to clear completed tasks from. Use the FULL ID exactly from list_task_lists or create_task_list - do NOT truncate or modify it. WARNING: All completed tasks will be marked as hidden."),
 ) -> str:
     """
     Clear all completed tasks from a task list. The tasks will be marked as hidden.

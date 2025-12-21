@@ -61,7 +61,7 @@ async def create_presentation(
 async def get_presentation(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    presentation_id: str = Field(..., description="The ID of the presentation to retrieve. Obtain this from the presentation's edit URL (https://docs.google.com/presentation/d/{presentation_id}/edit) or from presentation creation results."),
+    presentation_id: str = Field(..., description="The ID of the presentation to retrieve. Obtain from the presentation's edit URL (https://docs.google.com/presentation/d/{presentation_id}/edit) or from create_presentation. Use the FULL ID - do NOT truncate or modify it."),
 ) -> str:
     """
     Get details about a Google Slides presentation.
@@ -105,7 +105,7 @@ Slides Breakdown:
 async def batch_update_presentation(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    presentation_id: str = Field(..., description="The ID of the presentation to update. Obtain this from the presentation's edit URL or from presentation creation results."),
+    presentation_id: str = Field(..., description="The ID of the presentation to update. Obtain from the presentation's edit URL or from create_presentation. Use the FULL ID - do NOT truncate or modify it."),
     requests: List[Dict[str, Any]] = Field(..., description="List of update requests to apply. Each request is a dictionary containing the operation type and parameters. Supported operations include creating slides, shapes, tables, inserting text, etc."),
 ) -> str:
     """
@@ -157,8 +157,8 @@ async def batch_update_presentation(
 async def get_page(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    presentation_id: str = Field(..., description="The ID of the presentation. Obtain this from the presentation's edit URL or from presentation creation results."),
-    page_object_id: str = Field(..., description="The object ID of the page/slide to retrieve. Obtain this from get_presentation results which lists all slides with their object IDs."),
+    presentation_id: str = Field(..., description="The ID of the presentation. Obtain from the presentation's edit URL or from create_presentation. Use the FULL ID - do NOT truncate or modify it."),
+    page_object_id: str = Field(..., description="The object ID of the page/slide to retrieve. Use the FULL ID exactly from get_presentation - do NOT truncate or modify it."),
 ) -> str:
     """
     Get details about a specific page (slide) in a presentation.
@@ -214,8 +214,8 @@ Page Elements:
 async def get_page_thumbnail(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    presentation_id: str = Field(..., description="The ID of the presentation. Obtain this from the presentation's edit URL or from presentation creation results."),
-    page_object_id: str = Field(..., description="The object ID of the page/slide. Obtain this from get_presentation results which lists all slides with their object IDs."),
+    presentation_id: str = Field(..., description="The ID of the presentation. Obtain from the presentation's edit URL or from create_presentation. Use the FULL ID - do NOT truncate or modify it."),
+    page_object_id: str = Field(..., description="The object ID of the page/slide. Use the FULL ID exactly from get_presentation - do NOT truncate or modify it."),
     thumbnail_size: str = Field("MEDIUM", description="Size of thumbnail. Options: 'LARGE' (largest size), 'MEDIUM' (medium size), 'SMALL' (smallest size). Defaults to 'MEDIUM'."),
 ) -> str:
     """

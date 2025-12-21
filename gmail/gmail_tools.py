@@ -320,7 +320,7 @@ async def search_gmail_messages(
 @require_google_service("gmail", "gmail_read")
 async def get_gmail_message_content(
     service, 
-    message_id: str = Field(..., description="The unique ID of the Gmail message to retrieve. Obtain this from search_gmail_messages results."), 
+    message_id: str = Field(..., description="The unique ID of the Gmail message to retrieve. Use the FULL ID exactly from search_gmail_messages - do NOT truncate or modify it."), 
     user_google_email: str = Field(..., description="The user's Google email address.")
 ) -> str:
     """
@@ -784,7 +784,7 @@ def _format_thread_content(thread_data: dict, thread_id: str) -> str:
 @handle_http_errors("get_gmail_thread_content", is_read_only=True, service_type="gmail")
 async def get_gmail_thread_content(
     service, 
-    thread_id: str = Field(..., description="The unique ID of the Gmail thread to retrieve. Obtain this from search_gmail_messages results."), 
+    thread_id: str = Field(..., description="The unique ID of the Gmail thread to retrieve. Use the FULL ID exactly from search_gmail_messages - do NOT truncate or modify it."), 
     user_google_email: str = Field(..., description="The user's Google email address.")
 ) -> str:
     """
@@ -964,7 +964,7 @@ async def manage_gmail_label(
     user_google_email: str = Field(..., description="The user's Google email address."),
     action: Literal["create", "update", "delete"] = Field(..., description="Action to perform on the label. Options: 'create' (create a new label), 'update' (modify an existing label), 'delete' (remove a label)."),
     name: Optional[str] = Field(None, description="Label name. Required for 'create' action, optional for 'update' action. Ignored for 'delete' action."),
-    label_id: Optional[str] = Field(None, description="Label ID. Required for 'update' and 'delete' actions. Obtain label IDs from list_gmail_labels. Ignored for 'create' action."),
+    label_id: Optional[str] = Field(None, description="Label ID. Required for 'update' and 'delete' actions. Use the FULL ID exactly from list_gmail_labels - do NOT truncate or modify it. Ignored for 'create' action."),
     label_list_visibility: Literal["labelShow", "labelHide"] = Field("labelShow", description="Whether the label is shown in the Gmail label list. Options: 'labelShow' (visible in label list) or 'labelHide' (hidden from label list). Defaults to 'labelShow'."),
     message_list_visibility: Literal["show", "hide"] = Field("show", description="Whether the label is shown in the message list. Options: 'show' (visible in message list) or 'hide' (hidden from message list). Defaults to 'show'."),
 ) -> str:
@@ -1033,7 +1033,7 @@ async def manage_gmail_label(
 async def modify_gmail_message_labels(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    message_id: str = Field(..., description="The ID of the message to modify. Obtain this from search_gmail_messages or get_gmail_message_content results."),
+    message_id: str = Field(..., description="The ID of the message to modify. Use the FULL ID exactly from search_gmail_messages or get_gmail_message_content - do NOT truncate or modify it."),
     add_label_ids: List[str] = Field(default=[], description="List of label IDs to add to the message. Obtain label IDs from list_gmail_labels. To archive an email, remove the INBOX label using remove_label_ids instead."),
     remove_label_ids: List[str] = Field(default=[], description="List of label IDs to remove from the message. Obtain label IDs from list_gmail_labels. To archive an email, remove the INBOX label. To delete an email, add the TRASH label using add_label_ids instead."),
 ) -> str:

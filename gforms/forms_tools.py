@@ -66,7 +66,7 @@ async def create_form(
 async def get_form(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    form_id: str = Field(..., description="The ID of the form to retrieve. Obtain this from the form's edit URL (https://docs.google.com/forms/d/{form_id}/edit) or from form creation results."),
+    form_id: str = Field(..., description="The ID of the form to retrieve. Obtain from the form's edit URL (https://docs.google.com/forms/d/{form_id}/edit) or from create_form. Use the FULL ID - do NOT truncate or modify it."),
 ) -> str:
     """
     Get a form.
@@ -118,7 +118,7 @@ async def get_form(
 async def set_publish_settings(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    form_id: str = Field(..., description="The ID of the form to update publish settings for. Obtain this from the form's edit URL or from form creation results."),
+    form_id: str = Field(..., description="The ID of the form to update publish settings for. Obtain from the form's edit URL or from create_form. Use the FULL ID - do NOT truncate or modify it."),
     publish_as_template: bool = Field(False, description="Whether to publish the form as a template. If True, the form can be used as a template by others. Defaults to False."),
     require_authentication: bool = Field(False, description="Whether to require authentication to view or submit the form. If True, only authenticated users can access the form. Defaults to False."),
 ) -> str:
@@ -150,8 +150,8 @@ async def set_publish_settings(
 async def get_form_response(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    form_id: str = Field(..., description="The ID of the form. Obtain this from the form's edit URL or from form creation results."),
-    response_id: str = Field(..., description="The ID of the response to retrieve. Obtain this from list_form_responses results."),
+    form_id: str = Field(..., description="The ID of the form. Obtain from the form's edit URL or from create_form. Use the FULL ID - do NOT truncate or modify it."),
+    response_id: str = Field(..., description="The ID of the response to retrieve. Use the FULL ID exactly from list_form_responses - do NOT truncate or modify it."),
 ) -> str:
     """
     Get one response from the form.
@@ -199,7 +199,7 @@ async def get_form_response(
 async def list_form_responses(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    form_id: str = Field(..., description="The ID of the form. Obtain this from the form's edit URL or from form creation results."),
+    form_id: str = Field(..., description="The ID of the form. Obtain from the form's edit URL or from create_form. Use the FULL ID - do NOT truncate or modify it."),
     page_size: int = Field(10, description="Maximum number of responses to return per page. Defaults to 10."),
     page_token: Optional[str] = Field(None, description="Token for retrieving the next page of results. Use the 'next_page_token' from the previous response to get more results."),
 ) -> str:
