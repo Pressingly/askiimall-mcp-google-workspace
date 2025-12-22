@@ -1079,7 +1079,7 @@ async def modify_gmail_message_labels(
 async def batch_modify_gmail_message_labels(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    message_ids: List[str] = Field(..., description="A list of message IDs to modify. Obtain message IDs from search_gmail_messages results."),
+    message_ids: List[str] = Field(..., description="A list of message IDs to modify. Use the FULL IDs exactly from search_gmail_messages - do NOT truncate or modify them."),
     add_label_ids: List[str] = Field(default=[], description="List of label IDs to add to the messages. Obtain label IDs from list_gmail_labels. To archive emails, remove the INBOX label using remove_label_ids instead."),
     remove_label_ids: List[str] = Field(default=[], description="List of label IDs to remove from the messages. Obtain label IDs from list_gmail_labels. To archive emails, remove the INBOX label. To delete emails, add the TRASH label using add_label_ids instead."),
 ) -> str:

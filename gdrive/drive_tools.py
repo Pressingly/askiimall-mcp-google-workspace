@@ -131,7 +131,7 @@ async def search_drive_files(
 async def get_drive_file_content(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    file_id: str = Field(..., description="The Google Drive file ID. Can be obtained from search_drive_files or list_drive_items results."),
+    file_id: str = Field(..., description="The Google Drive file ID. Use the FULL ID exactly from search_drive_files, list_drive_items, or create_drive_file - do NOT truncate or modify it."),
 ) -> str:
     """
     Retrieves the content of a specific Google Drive file by ID, supporting files in shared drives.
@@ -217,7 +217,7 @@ async def get_drive_file_content(
 async def list_drive_items(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    folder_id: str = Field('root', description="The ID of the Google Drive folder. Use 'root' for the root of My Drive. For a shared drive, this can be the shared drive's ID to list its root, or a folder ID within that shared drive."),
+    folder_id: str = Field('root', description="The ID of the Google Drive folder. Use 'root' for the root of My Drive. For a shared drive, this can be the shared drive's ID to list its root, or a folder ID within that shared drive. Use the FULL ID exactly from search_drive_files or list_drive_items - do NOT truncate or modify it."),
     page_size: int = Field(100, description="The maximum number of items to return. Defaults to 100."),
     drive_id: Optional[str] = Field(None, description="ID of the shared drive. If provided, the listing is scoped to this drive. If not provided, lists items from user's 'My Drive' and accessible shared drives (if include_items_from_all_drives is True)."),
     include_items_from_all_drives: bool = Field(True, description="Whether items from all accessible shared drives should be included if drive_id is not set. Defaults to True."),
@@ -267,7 +267,7 @@ async def create_drive_file(
     user_google_email: str = Field(..., description="The user's Google email address."),
     file_name: str = Field(..., description="The name for the new file."),
     content: Optional[str] = Field(None, description="The content to write to the file. Either 'content' or 'fileUrl' must be provided."),
-    folder_id: str = Field('root', description="The ID of the parent folder. Use 'root' for the root of My Drive. For shared drives, this must be a folder ID within the shared drive."),
+    folder_id: str = Field('root', description="The ID of the parent folder. Use 'root' for the root of My Drive. For shared drives, this must be a folder ID within the shared drive. Use the FULL ID exactly from search_drive_files or list_drive_items - do NOT truncate or modify it."),
     mime_type: str = Field('text/plain', description="The MIME type of the file. Examples: 'text/plain', 'text/html', 'application/json', 'image/png'. Defaults to 'text/plain'. If fileUrl is provided, the MIME type may be automatically detected from the Content-Type header."),
     fileUrl: Optional[str] = Field(None, description="Public URL to fetch the file content from. Either 'content' or 'fileUrl' must be provided. The file will be downloaded from this URL and uploaded to Google Drive."),
 ) -> str:

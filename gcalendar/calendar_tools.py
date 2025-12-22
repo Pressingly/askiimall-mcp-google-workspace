@@ -691,7 +691,7 @@ async def delete_event(
 async def get_event(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    event_id: str = Field(..., description="The ID of the event to retrieve. Obtain this from get_events results."),
+    event_id: str = Field(..., description="The ID of the event to retrieve. Use the FULL ID exactly from get_events or create_event - do NOT truncate or modify it."),
     calendar_id: str = Field("primary", description="The ID of the calendar to query. Use 'primary' for the user's primary calendar. Calendar IDs can be obtained using list_calendars.")
 ) -> str:
     """

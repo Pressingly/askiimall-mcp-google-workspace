@@ -158,7 +158,7 @@ async def search_messages(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     query: str = Field(..., description="The search query string to match against message text content."),
-    space_id: Optional[str] = Field(None, description="The ID of a specific Google Chat space to search within. If not provided, searches across all accessible spaces (limited to first 10 spaces). Obtain space IDs from list_spaces results."),
+    space_id: Optional[str] = Field(None, description="The ID of a specific Google Chat space to search within. If not provided, searches across all accessible spaces (limited to first 10 spaces). Use the FULL ID exactly from list_spaces - do NOT truncate or modify it."),
     page_size: int = Field(25, description="Maximum number of messages to return per space. Defaults to 25."),
 ) -> str:
     """
