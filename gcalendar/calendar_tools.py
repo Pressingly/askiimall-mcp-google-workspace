@@ -558,13 +558,14 @@ async def modify_event(
         )
 
         # Preserve existing fields if not provided in the update
+        # Only preserve fields that weren't already set in event_body
         _preserve_existing_fields(event_body, existing_event, {
             "summary": summary,
             "description": description,
             "location": location,
             "attendees": attendees,
-            "start": start_time,
-            "end": end_time
+            "start": None if "start" in event_body else start_time,
+            "end": None if "end" in event_body else end_time
         })
 
         # Handle Google Meet conference data
