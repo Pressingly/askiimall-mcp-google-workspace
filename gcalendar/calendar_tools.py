@@ -564,8 +564,8 @@ async def modify_event(
             "description": description,
             "location": location,
             "attendees": attendees,
-            "start": None if "start" in event_body else start_time,
-            "end": None if "end" in event_body else end_time
+            "start": event_body.get("start"),
+            "end": event_body.get("end")
         })
 
         # Handle Google Meet conference data
