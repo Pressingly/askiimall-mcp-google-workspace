@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 async def handle_oauth_authorize(request: Request):
-    """Common handler for OAuth authorization proxy."""
+    """Common handler for OAuth authorization proxy with dynamic credential support."""
     origin = request.headers.get("origin")
 
     if request.method == "OPTIONS":
@@ -37,22 +37,62 @@ async def handle_oauth_authorize(request: Request):
 
     # Get query parameters
     params = dict(request.query_params)
-
-    # Add our client ID if not provided
-    client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
-    if "client_id" not in params and client_id:
-        params["client_id"] = client_id
-
+    
+    # Extract dynamic credentials and service from request
+    service = params.pop("service", None)  # Remove from params to not pass to Google
+    dynamic_client_id = params.pop("client_id", None)
+    dynamic_client_secret = params.pop("client_secret", None)
+    
+    # Get OAuth config for fallback and utilities
+    config = get_oauth_config()
+    
+    # Determine which credentials to use (dynamic or global fallback)
+    client_id = dynamic_client_id if dynamic_client_id else config.client_id
+    client_secret = dynamic_client_secret if dynamic_client_secret else config.client_secret
+    
+    if not client_id or not client_secret:
+        error_msg = f"OAuth client credentials not configured for service '{service}'" if service else "OAuth client credentials not configured"
+        logger.error(error_msg)
+        cors_headers = get_development_cors_headers(origin)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "oauth_not_configured", "error_description": error_msg},
+            headers=cors_headers
+        )
+    
+    logger.info(f"OAuth authorization for service '{service}' using client_id: {client_id[:20]}...")
+    
+    # Add client ID to params for Google
+    params["client_id"] = client_id
+    
     # Ensure response_type is code
     params["response_type"] = "code"
 
-    # Merge client scopes with scopes for enabled tools only
-    client_scopes = params.get("scope", "").split() if params.get("scope") else []
-    # Include scopes for enabled tools only (not all tools)
-    enabled_tool_scopes = get_current_scopes()
-    all_scopes = set(client_scopes) | set(enabled_tool_scopes)
-    params["scope"] = " ".join(sorted(all_scopes))
-    logger.info(f"OAuth 2.1 authorization: Requesting scopes: {params['scope']}")
+    # Pass through scopes as-is from the client
+    # Client is responsible for requesting the scopes they need
+    if "scope" in params:
+        logger.info(f"OAuth authorization: Requesting scopes: {params['scope']}")
+    else:
+        logger.warning("No scopes provided in authorization request")
+    
+    # Store credentials in server memory for token exchange (keyed by state)
+    # This avoids encoding credentials in the state parameter
+    original_state = params.get("state", "")
+    if not original_state:
+        # Generate a state if client didn't provide one
+        import secrets
+        original_state = secrets.token_urlsafe(32)
+        params["state"] = original_state
+    
+    # Store credentials temporarily for token exchange
+    # We'll retrieve them when Google redirects back with the same state
+    from auth.oauth_config import _store_pending_credentials
+    _store_pending_credentials(original_state, {
+        "service": service,
+        "client_id": client_id,
+        "client_secret": client_secret,
+    })
+    logger.debug(f"Stored credentials for state: {original_state[:10]}...")
 
     # Build Google authorization URL
     google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
@@ -67,12 +107,19 @@ async def handle_oauth_authorize(request: Request):
 
 
 async def handle_proxy_token_exchange(request: Request):
-    """Common handler for OAuth token exchange proxy with comprehensive error handling."""
+    """Common handler for OAuth token exchange proxy with dynamic credential support."""
     origin = request.headers.get("origin")
 
     if request.method == "OPTIONS":
         cors_headers = get_development_cors_headers(origin)
         return JSONResponse(content={}, headers=cors_headers)
+    
+    # Variables to track credentials and service from state
+    service = None
+    client_id = None
+    client_secret = None
+    original_state = None
+    
     try:
         # Get form data with validation
         try:
@@ -91,20 +138,44 @@ async def handle_proxy_token_exchange(request: Request):
             # Convert to single values and validate
             request_data = {k: v[0] if v else '' for k, v in form_data.items()}
             validate_token_request(request_data)
+            
+            # Extract credentials from server-side storage (keyed by state)
+            state_param = request_data.get('state')
+            
+            if state_param:
+                try:
+                    # Retrieve credentials stored during authorization
+                    from auth.oauth_config import _get_pending_credentials
+                    credentials_data = _get_pending_credentials(state_param)
+                    
+                    if credentials_data:
+                        service = credentials_data.get('service')
+                        client_id = credentials_data.get('client_id')
+                        client_secret = credentials_data.get('client_secret')
+                        logger.info(f"Retrieved credentials from cache for service: {service}")
+                    else:
+                        logger.warning(f"No credentials found in cache for state: {state_param[:10]}...")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to retrieve credentials from cache: {e}")
+            
+            # Fallback to global environment variables if credentials not in cache
+            if not client_id or not client_secret:
+                logger.debug("Using global environment variable credentials as fallback")
+                config = get_oauth_config()
+                client_id = client_id or config.client_id
+                client_secret = client_secret or config.client_secret
 
-            # Check if client_id is missing (public client)
+            # Add credentials to form_data if missing
             if 'client_id' not in form_data or not form_data['client_id'][0]:
-                client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
                 if client_id:
                     form_data['client_id'] = [client_id]
-                    logger.debug("Added missing client_id to token request")
+                    logger.debug("Added client_id to token request")
 
-            # Check if client_secret is missing (public client using PKCE)
             if 'client_secret' not in form_data:
-                client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
                 if client_secret:
                     form_data['client_secret'] = [client_secret]
-                    logger.debug("Added missing client_secret to token request")
+                    logger.debug("Added client_secret to token request")
 
             # Reconstruct body with added credentials
             body = urlencode(form_data, doseq=True).encode('utf-8')
@@ -135,12 +206,13 @@ async def handle_proxy_token_exchange(request: Request):
                                     # Get signing key from JWT header
                                     signing_key = jwks_client.get_signing_key_from_jwt(response_data["id_token"])
 
-                                    # Verify and decode the ID token
+                                    # Verify and decode the ID token (use actual client_id for verification)
+                                    config = get_oauth_config()
                                     id_token_claims = jwt.decode(
                                         response_data["id_token"],
                                         signing_key.key,
                                         algorithms=["RS256"],
-                                        audience=os.getenv("GOOGLE_OAUTH_CLIENT_ID"),
+                                        audience=client_id if client_id else config.client_id,
                                         issuer="https://accounts.google.com"
                                     )
                                     user_email = id_token_claims.get("email")
@@ -160,9 +232,24 @@ async def handle_proxy_token_exchange(request: Request):
                                         except Exception as e:
                                             logger.debug(f"Could not get MCP session ID: {e}")
 
-                                        # Store the token session with MCP session binding
-                                        session_id = store_token_session(response_data, user_email, mcp_session_id)
-                                        logger.info(f"Stored OAuth session for {user_email} (session: {session_id}, mcp: {mcp_session_id})")
+                                        # Store the token session with service and client_id context
+                                        from auth.oauth21_session_store import get_oauth21_session_store
+                                        store = get_oauth21_session_store()
+                                        
+                                        session_id = store.store_session(
+                                            user_email=user_email,
+                                            access_token=response_data["access_token"],
+                                            refresh_token=response_data.get("refresh_token"),
+                                            scopes=response_data.get("scope", "").split() if response_data.get("scope") else [],
+                                            expires_in=response_data.get("expires_in"),
+                                            mcp_session_id=mcp_session_id,
+                                            service=service,
+                                            client_id=client_id,
+                                            client_secret=client_secret,
+                                            issuer="https://accounts.google.com",
+                                            session_id=f"google_{user_email}"
+                                        )
+                                        logger.info(f"Stored OAuth session for {user_email} (service: {service}, session: {session_id}, mcp: {mcp_session_id})")
 
                                         # Also create and store Google credentials
                                         expiry = None
@@ -174,8 +261,8 @@ async def handle_proxy_token_exchange(request: Request):
                                             token=response_data["access_token"],
                                             refresh_token=response_data.get("refresh_token"),
                                             token_uri="https://oauth2.googleapis.com/token",
-                                            client_id=os.getenv("GOOGLE_OAUTH_CLIENT_ID"),
-                                            client_secret=os.getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
+                                            client_id=client_id if client_id else config.client_id,
+                                            client_secret=client_secret if client_secret else config.client_secret,
                                             scopes=response_data.get("scope", "").split() if response_data.get("scope") else None,
                                             expiry=expiry
                                         )
@@ -308,8 +395,8 @@ async def handle_oauth_client_config(request: Request):
         cors_headers = get_development_cors_headers(origin)
         return JSONResponse(content={}, headers=cors_headers)
 
-    client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
-    if not client_id:
+    config = get_oauth_config()
+    if not config.client_id:
         cors_headers = get_development_cors_headers(origin)
         return JSONResponse(
             status_code=404,
@@ -317,12 +404,9 @@ async def handle_oauth_client_config(request: Request):
             headers=cors_headers
         )
 
-    # Get OAuth configuration
-    config = get_oauth_config()
-
     return JSONResponse(
         content={
-            "client_id": client_id,
+            "client_id": config.client_id,
             "client_name": "Google Workspace MCP Server",
             "client_uri": config.base_url,
             "redirect_uris": [

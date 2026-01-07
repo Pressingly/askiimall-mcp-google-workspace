@@ -27,7 +27,7 @@ class OAuthConfig:
         self.port = int(os.getenv("PORT", os.getenv("WORKSPACE_MCP_PORT", "8000")))
         self.base_url = f"{self.base_uri}"
 
-        # OAuth client configuration
+        # OAuth client configuration (global defaults)
         self.client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
         self.client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
 
@@ -234,9 +234,9 @@ class OAuthConfig:
         """
         metadata = {
             "issuer": self.base_url,
-            "authorization_endpoint": f"{self.base_url}/oauth2/authorize",
-            "token_endpoint": f"{self.base_url}/oauth2/token",
-            "registration_endpoint": f"{self.base_url}/oauth2/register",
+            "authorization_endpoint": f"{self.base_url}:8004/oauth2/authorize",
+            "token_endpoint": f"{self.base_url}:8004/oauth2/token",
+            "registration_endpoint": f"{self.base_url}:8004/oauth2/register",
             "jwks_uri": "https://www.googleapis.com/oauth2/v3/certs",
             "response_types_supported": ["code", "token"],
             "grant_types_supported": ["authorization_code", "refresh_token"],
@@ -255,12 +255,36 @@ class OAuthConfig:
             metadata["response_types_supported"] = ["code"]
             # OAuth 2.1 requires exact redirect URI matching
             metadata["require_exact_redirect_uri"] = True
+            # Indicate support for dynamic client credentials
+            metadata["dynamic_client_credentials_supported"] = True
+            metadata["client_credentials_in_authorization_request"] = True
 
         return metadata
 
 
+# =============================================================================
+# Pending Credentials Cache (for OAuth flow)
+# =============================================================================
+
 # Global configuration instance
 _oauth_config = None
+
+# Simple in-memory cache for credentials during OAuth flow
+# Keyed by state parameter, cleared after token exchange
+_pending_credentials_cache: Dict[str, Dict[str, Any]] = {}
+
+def _store_pending_credentials(state: str, credentials: Dict[str, Any]):
+    """Store credentials temporarily during OAuth flow."""
+    _pending_credentials_cache[state] = credentials
+
+def _get_pending_credentials(state: str) -> Optional[Dict[str, Any]]:
+    """Retrieve and remove credentials from cache."""
+    return _pending_credentials_cache.pop(state, None)
+
+
+# =============================================================================
+# Public API Functions
+# =============================================================================
 
 
 def get_oauth_config() -> OAuthConfig:

@@ -171,9 +171,11 @@ class OAuth21SessionStore:
         client_secret: Optional[str] = None,
         scopes: Optional[list] = None,
         expiry: Optional[Any] = None,
+        expires_in: Optional[int] = None,
         session_id: Optional[str] = None,
         mcp_session_id: Optional[str] = None,
         issuer: Optional[str] = None,
+        service: Optional[str] = None,
     ):
         """
         Store OAuth 2.1 session information.
@@ -187,11 +189,18 @@ class OAuth21SessionStore:
             client_secret: OAuth client secret
             scopes: List of granted scopes
             expiry: Token expiry time
+            expires_in: Token expiry duration in seconds (alternative to expiry)
             session_id: OAuth 2.1 session ID
             mcp_session_id: FastMCP session ID to map to this user
             issuer: Token issuer (e.g., "https://accounts.google.com")
+            service: Service name (e.g., "gmail", "drive")
         """
         with self._lock:
+            # Calculate expiry if expires_in provided
+            calculated_expiry = expiry
+            if expires_in and not expiry:
+                calculated_expiry = datetime.utcnow() + timedelta(seconds=expires_in)
+            
             session_info = {
                 "access_token": access_token,
                 "refresh_token": refresh_token,
@@ -199,10 +208,11 @@ class OAuth21SessionStore:
                 "client_id": client_id,
                 "client_secret": client_secret,
                 "scopes": scopes or [],
-                "expiry": expiry,
+                "expiry": calculated_expiry,
                 "session_id": session_id,
                 "mcp_session_id": mcp_session_id,
                 "issuer": issuer,
+                "service": service,
             }
             
             self._sessions[user_email] = session_info
@@ -219,9 +229,17 @@ class OAuth21SessionStore:
                     raise ValueError(f"Session {mcp_session_id} is already bound to a different user")
                 
                 self._mcp_session_mapping[mcp_session_id] = user_email
-                logger.info(f"Stored OAuth 2.1 session for {user_email} (session_id: {session_id}, mcp_session_id: {mcp_session_id})")
+                log_msg = f"Stored OAuth 2.1 session for {user_email} (session_id: {session_id}, mcp_session_id: {mcp_session_id}"
+                if service:
+                    log_msg += f", service: {service}"
+                log_msg += ")"
+                logger.info(log_msg)
             else:
-                logger.info(f"Stored OAuth 2.1 session for {user_email} (session_id: {session_id})")
+                log_msg = f"Stored OAuth 2.1 session for {user_email} (session_id: {session_id}"
+                if service:
+                    log_msg += f", service: {service}"
+                log_msg += ")"
+                logger.info(log_msg)
             
             # Also create binding for the OAuth session ID
             if session_id and session_id not in self._session_auth_binding:
