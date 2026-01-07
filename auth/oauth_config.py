@@ -234,9 +234,9 @@ class OAuthConfig:
         """
         metadata = {
             "issuer": self.base_url,
-            "authorization_endpoint": f"{self.base_url}:8004/oauth2/authorize",
-            "token_endpoint": f"{self.base_url}:8004/oauth2/token",
-            "registration_endpoint": f"{self.base_url}:8004/oauth2/register",
+            "authorization_endpoint": f"{self.base_url}/oauth2/authorize",
+            "token_endpoint": f"{self.base_url}/oauth2/token",
+            "registration_endpoint": f"{self.base_url}/oauth2/register",
             "jwks_uri": "https://www.googleapis.com/oauth2/v3/certs",
             "response_types_supported": ["code", "token"],
             "grant_types_supported": ["authorization_code", "refresh_token"],
