@@ -81,6 +81,9 @@ async def search_drive_files(
     corpora: Optional[str] = Field(None, description="Bodies of items to query. Options: 'user' (My Drive only), 'domain' (domain-wide), 'drive' (specific shared drive), 'allDrives' (all accessible). If 'drive_id' is specified and 'corpora' is None, it defaults to 'drive'. Prefer 'user' or 'drive' over 'allDrives' for efficiency."),
 ) -> str:
     """
+    **ONLY use when the user explicitly mentions Google Drive/Workspace** (e.g., "search my Drive").
+    DO NOT use for generic file searches.
+    
     Searches for files and folders within a user's Google Drive, including shared drives.
 
     Returns:
@@ -134,6 +137,9 @@ async def get_drive_file_content(
     file_id: str = Field(..., description="The Google Drive file ID. Use the FULL ID exactly from search_drive_files, list_drive_items, or create_drive_file - do NOT truncate or modify it."),
 ) -> str:
     """
+    **ONLY use when the user explicitly mentions reading from Google Drive/Workspace.**
+    DO NOT use for generic file reading requests.
+    
     Retrieves the content of a specific Google Drive file by ID, supporting files in shared drives.
 
     • Native Google Docs, Sheets, Slides → exported as text / CSV.
@@ -224,6 +230,9 @@ async def list_drive_items(
     corpora: Optional[str] = Field(None, description="Corpus to query. Options: 'user' (My Drive only), 'drive' (specific shared drive), 'allDrives' (all accessible). If drive_id is set and corpora is None, 'drive' is used. If None and no drive_id, API defaults apply."),
 ) -> str:
     """
+    **ONLY use when the user explicitly mentions listing Google Drive/Workspace folders.**
+    DO NOT use for generic folder listing requests.
+    
     Lists files and folders, supporting shared drives.
     If `drive_id` is specified, lists items within that shared drive. `folder_id` is then relative to that drive (or use drive_id as folder_id for root).
     If `drive_id` is not specified, lists items from user's "My Drive" and accessible shared drives (if `include_items_from_all_drives` is True).
@@ -272,6 +281,9 @@ async def create_drive_file(
     fileUrl: Optional[str] = Field(None, description="Public URL to fetch the file content from. Either 'content' or 'fileUrl' must be provided. The file will be downloaded from this URL and uploaded to Google Drive."),
 ) -> str:
     """
+    **ONLY use when the user explicitly mentions saving to Google Drive/Workspace** (e.g., "save to my Drive").
+    For generic requests like "create a file", provide content directly in chat instead.
+    
     Creates a new file in Google Drive, supporting creation within shared drives.
     Accepts either direct content or a fileUrl to fetch the content from.
     
