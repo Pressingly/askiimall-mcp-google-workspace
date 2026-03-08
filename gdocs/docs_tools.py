@@ -15,6 +15,7 @@ from auth.service_decorator import require_google_service, require_multiple_serv
 from core.utils import extract_office_xml_text, handle_http_errors
 from core.server import server
 from core.comments import create_comment_tools
+from core.response import success_response
 
 # Import helper functions for document operations
 from gdocs.docs_helpers import (
@@ -75,15 +76,14 @@ async def search_docs(
         ).execute
     )
     files = response.get('files', [])
-    if not files:
-        return f"No Google Docs found matching '{query}'."
-
-    output = [f"Found {len(files)} Google Docs matching '{query}':"]
-    for f in files:
-        output.append(
-            f"- {f['name']} (ID: {f['id']}) Modified: {f.get('modifiedTime')} Link: {f.get('webViewLink')}"
-        )
-    return "\n".join(output)
+    mapped = [{
+        "id": f.get("id"),
+        "name": f.get("name"),
+        "created": f.get("createdTime"),
+        "modified": f.get("modifiedTime"),
+        "link": f.get("webViewLink"),
+    } for f in files]
+    return success_response({"documents": mapped, "count": len(mapped)})
 
 @server.tool()
 @handle_http_errors("get_doc_content", is_read_only=True, service_type="docs")
@@ -238,11 +238,15 @@ async def get_doc_content(
                     f"{len(file_content_bytes)} bytes]"
                 )
 
-    header = (
-        f'File: "{file_name}" (ID: {document_id}, Type: {mime_type})\n'
-        f'Link: {web_view_link}\n\n--- CONTENT ---\n'
-    )
-    return header + body_text
+    return success_response({
+        "file": {
+            "id": document_id,
+            "name": file_name,
+            "type": mime_type,
+            "link": web_view_link,
+        },
+        "content": body_text,
+    })
 
 @server.tool()
 @handle_http_errors("list_docs_in_folder", is_read_only=True, service_type="docs")
@@ -269,12 +273,13 @@ async def list_docs_in_folder(
         ).execute
     )
     items = rsp.get('files', [])
-    if not items:
-        return f"No Google Docs found in folder '{folder_id}'."
-    out = [f"Found {len(items)} Docs in folder '{folder_id}':"]
-    for f in items:
-        out.append(f"- {f['name']} (ID: {f['id']}) Modified: {f.get('modifiedTime')} Link: {f.get('webViewLink')}")
-    return "\n".join(out)
+    mapped = [{
+        "id": f.get("id"),
+        "name": f.get("name"),
+        "modified": f.get("modifiedTime"),
+        "link": f.get("webViewLink"),
+    } for f in items]
+    return success_response({"folder_id": folder_id, "documents": mapped, "count": len(mapped)})
 
 @server.tool()
 @handle_http_errors("create_doc", service_type="docs")
@@ -299,9 +304,8 @@ async def create_doc(
         requests = [{'insertText': {'location': {'index': 1}, 'text': content}}]
         await asyncio.to_thread(service.documents().batchUpdate(documentId=doc_id, body={'requests': requests}).execute)
     link = f"https://docs.google.com/document/d/{doc_id}/edit"
-    msg = f"Created Google Doc '{title}' (ID: {doc_id}) for {user_google_email}. Link: {link}"
-    logger.info(f"Successfully created Google Doc '{title}' (ID: {doc_id}) for {user_google_email}. Link: {link}")
-    return msg
+    logger.info(f"Successfully created Google Doc '{title}' (ID: {doc_id}) for {user_google_email}.")
+    return success_response({"id": doc_id, "title": title, "link": link})
 
 
 @server.tool()
@@ -426,9 +430,12 @@ async def modify_doc_text(
     )
 
     link = f"https://docs.google.com/document/d/{document_id}/edit"
-    operation_summary = "; ".join(operations)
-    text_info = f" Text length: {len(text)} characters." if text else ""
-    return f"{operation_summary} in document {document_id}.{text_info} Link: {link}"
+    return success_response({
+        "document_id": document_id,
+        "operations": operations,
+        "text_length": len(text) if text else None,
+        "link": link,
+    })
 
 @server.tool()
 @handle_http_errors("find_and_replace_doc", service_type="docs")
@@ -465,8 +472,13 @@ async def find_and_replace_doc(
         if 'replaceAllText' in reply:
             replacements = reply['replaceAllText'].get('occurrencesChanged', 0)
 
-    link = f"https://docs.google.com/document/d/{document_id}/edit"
-    return f"Replaced {replacements} occurrence(s) of '{find_text}' with '{replace_text}' in document {document_id}. Link: {link}"
+    return success_response({
+        "document_id": document_id,
+        "find_text": find_text,
+        "replace_text": replace_text,
+        "occurrences_changed": replacements,
+        "link": f"https://docs.google.com/document/d/{document_id}/edit",
+    })
 
 
 @server.tool()
@@ -534,8 +546,13 @@ async def insert_doc_elements(
         ).execute
     )
 
-    link = f"https://docs.google.com/document/d/{document_id}/edit"
-    return f"Inserted {description} at index {index} in document {document_id}. Link: {link}"
+    return success_response({
+        "document_id": document_id,
+        "element_type": element_type,
+        "description": description,
+        "index": index,
+        "link": f"https://docs.google.com/document/d/{document_id}/edit",
+    })
 
 @server.tool()
 @handle_http_errors("insert_doc_image", service_type="docs")
@@ -601,12 +618,14 @@ async def insert_doc_image(
         ).execute
     )
 
-    size_info = ""
-    if width or height:
-        size_info = f" (size: {width or 'auto'}x{height or 'auto'} points)"
-
-    link = f"https://docs.google.com/document/d/{document_id}/edit"
-    return f"Inserted {source_description}{size_info} at index {index} in document {document_id}. Link: {link}"
+    return success_response({
+        "document_id": document_id,
+        "source": source_description,
+        "index": index,
+        "width": width,
+        "height": height,
+        "link": f"https://docs.google.com/document/d/{document_id}/edit",
+    })
 
 @server.tool()
 @handle_http_errors("update_doc_headers_footers", service_type="docs")
@@ -650,8 +669,12 @@ async def update_doc_headers_footers(
     )
 
     if success:
-        link = f"https://docs.google.com/document/d/{document_id}/edit"
-        return f"{message}. Link: {link}"
+        return success_response({
+            "document_id": document_id,
+            "section_type": section_type,
+            "header_footer_type": header_footer_type,
+            "link": f"https://docs.google.com/document/d/{document_id}/edit",
+        })
     else:
         return f"Error: {message}"
 
@@ -691,9 +714,12 @@ async def batch_update_doc(
     )
 
     if success:
-        link = f"https://docs.google.com/document/d/{document_id}/edit"
-        replies_count = metadata.get('replies_count', 0)
-        return f"{message} on document {document_id}. API replies: {replies_count}. Link: {link}"
+        return success_response({
+            "document_id": document_id,
+            "operations_count": len(operations),
+            "replies_count": metadata.get('replies_count', 0),
+            "link": f"https://docs.google.com/document/d/{document_id}/edit",
+        })
     else:
         return f"Error: {message}"
 
@@ -804,9 +830,9 @@ async def inspect_doc_structure(
                     'end_index': table['end_index']
                 })
 
-    import json
-    link = f"https://docs.google.com/document/d/{document_id}/edit"
-    return f"Document structure analysis for {document_id}:\n\n{json.dumps(result, indent=2)}\n\nLink: {link}"
+    result["document_id"] = document_id
+    result["link"] = f"https://docs.google.com/document/d/{document_id}/edit"
+    return success_response(result)
 
 @server.tool()
 @handle_http_errors("create_table_with_data", service_type="docs")
@@ -886,11 +912,13 @@ async def create_table_with_data(
         )
 
     if success:
-        link = f"https://docs.google.com/document/d/{document_id}/edit"
-        rows = metadata.get('rows', 0)
-        columns = metadata.get('columns', 0)
-
-        return f"SUCCESS: {message}. Table: {rows}x{columns}, Index: {index}. Link: {link}"
+        return success_response({
+            "document_id": document_id,
+            "rows": metadata.get('rows', 0),
+            "columns": metadata.get('columns', 0),
+            "index": index,
+            "link": f"https://docs.google.com/document/d/{document_id}/edit",
+        })
     else:
         return f"ERROR: {message}"
 
@@ -950,31 +978,31 @@ async def debug_table_structure(
 
     table_info = tables[table_index]
 
-    import json
-
     # Extract detailed cell information
     debug_info = {
+        'document_id': document_id,
         'table_index': table_index,
         'dimensions': f"{table_info['rows']}x{table_info['columns']}",
-        'table_range': f"[{table_info['start_index']}-{table_info['end_index']}]",
-        'cells': []
+        'table_range': {'start': table_info['start_index'], 'end': table_info['end_index']},
+        'cells': [],
+        'link': f"https://docs.google.com/document/d/{document_id}/edit",
     }
 
     for row_idx, row in enumerate(table_info['cells']):
         row_info = []
         for col_idx, cell in enumerate(row):
             cell_debug = {
-                'position': f"({row_idx},{col_idx})",
-                'range': f"[{cell['start_index']}-{cell['end_index']}]",
-                'insertion_index': cell.get('insertion_index', 'N/A'),
-                'current_content': repr(cell.get('content', '')),
+                'row': row_idx,
+                'col': col_idx,
+                'range': {'start': cell['start_index'], 'end': cell['end_index']},
+                'insertion_index': cell.get('insertion_index'),
+                'current_content': cell.get('content', ''),
                 'content_elements_count': len(cell.get('content_elements', []))
             }
             row_info.append(cell_debug)
         debug_info['cells'].append(row_info)
 
-    link = f"https://docs.google.com/document/d/{document_id}/edit"
-    return f"Table structure debug for table {table_index}:\n\n{json.dumps(debug_info, indent=2)}\n\nLink: {link}"
+    return success_response(debug_info)
 
 
 # Create comment management tools for documents

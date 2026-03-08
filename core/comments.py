@@ -13,8 +13,30 @@ from pydantic import Field
 from auth.service_decorator import require_google_service
 from core.server import server
 from core.utils import handle_http_errors
+from core.response import success_response
 
 logger = logging.getLogger(__name__)
+
+
+def _map_comment(raw):
+    """Map a raw comment to a clean shape."""
+    replies_raw = raw.get('replies', [])
+    replies = [{
+        "id": r.get("id"),
+        "content": r.get("content"),
+        "author": r.get("author", {}).get("displayName"),
+        "created": r.get("createdTime"),
+    } for r in replies_raw]
+
+    return {
+        "id": raw.get("id"),
+        "content": raw.get("content"),
+        "author": raw.get("author", {}).get("displayName"),
+        "created": raw.get("createdTime"),
+        "resolved": raw.get("resolved", False),
+        "replies": replies if replies else None,
+        "reply_count": len(replies_raw),
+    }
 
 
 def create_comment_tools(app_name: str, file_id_param: str):
@@ -139,42 +161,12 @@ async def _read_comments_impl(service, app_name: str, file_id: str) -> str:
     )
 
     comments = response.get('comments', [])
+    mapped = [_map_comment(c) for c in comments]
 
-    if not comments:
-        return f"No comments found in {app_name} {file_id}"
-
-    output = [f"Found {len(comments)} comments in {app_name} {file_id}:\\n"]
-
-    for comment in comments:
-        author = comment.get('author', {}).get('displayName', 'Unknown')
-        content = comment.get('content', '')
-        created = comment.get('createdTime', '')
-        resolved = comment.get('resolved', False)
-        comment_id = comment.get('id', '')
-        status = " [RESOLVED]" if resolved else ""
-
-        output.append(f"Comment ID: {comment_id}")
-        output.append(f"Author: {author}")
-        output.append(f"Created: {created}{status}")
-        output.append(f"Content: {content}")
-
-        # Add replies if any
-        replies = comment.get('replies', [])
-        if replies:
-            output.append(f"  Replies ({len(replies)}):")
-            for reply in replies:
-                reply_author = reply.get('author', {}).get('displayName', 'Unknown')
-                reply_content = reply.get('content', '')
-                reply_created = reply.get('createdTime', '')
-                reply_id = reply.get('id', '')
-                output.append(f"    Reply ID: {reply_id}")
-                output.append(f"    Author: {reply_author}")
-                output.append(f"    Created: {reply_created}")
-                output.append(f"    Content: {reply_content}")
-
-        output.append("")  # Empty line between comments
-
-    return "\\n".join(output)
+    return success_response({
+        "comments": mapped,
+        "count": len(mapped),
+    })
 
 
 async def _create_comment_impl(service, app_name: str, file_id: str, comment_content: str) -> str:
@@ -191,11 +183,14 @@ async def _create_comment_impl(service, app_name: str, file_id: str, comment_con
         ).execute
     )
 
-    comment_id = comment.get('id', '')
-    author = comment.get('author', {}).get('displayName', 'Unknown')
-    created = comment.get('createdTime', '')
-
-    return f"Comment created successfully!\\nComment ID: {comment_id}\\nAuthor: {author}\\nCreated: {created}\\nContent: {comment_content}"
+    return success_response({
+        "comment": {
+            "id": comment.get("id"),
+            "content": comment.get("content"),
+            "author": comment.get("author", {}).get("displayName"),
+            "created": comment.get("createdTime"),
+        },
+    })
 
 
 async def _reply_to_comment_impl(service, app_name: str, file_id: str, comment_id: str, reply_content: str) -> str:
@@ -213,11 +208,14 @@ async def _reply_to_comment_impl(service, app_name: str, file_id: str, comment_i
         ).execute
     )
 
-    reply_id = reply.get('id', '')
-    author = reply.get('author', {}).get('displayName', 'Unknown')
-    created = reply.get('createdTime', '')
-
-    return f"Reply posted successfully!\\nReply ID: {reply_id}\\nAuthor: {author}\\nCreated: {created}\\nContent: {reply_content}"
+    return success_response({
+        "reply": {
+            "id": reply.get("id"),
+            "content": reply.get("content"),
+            "author": reply.get("author", {}).get("displayName"),
+            "created": reply.get("createdTime"),
+        },
+    })
 
 
 async def _resolve_comment_impl(service, app_name: str, file_id: str, comment_id: str) -> str:
@@ -238,8 +236,8 @@ async def _resolve_comment_impl(service, app_name: str, file_id: str, comment_id
         ).execute
     )
 
-    reply_id = reply.get('id', '')
-    author = reply.get('author', {}).get('displayName', 'Unknown')
-    created = reply.get('createdTime', '')
-
-    return f"Comment {comment_id} has been resolved successfully.\\nResolve reply ID: {reply_id}\\nAuthor: {author}\\nCreated: {created}"
+    return success_response({
+        "resolved": True,
+        "comment_id": comment_id,
+        "reply_id": reply.get("id"),
+    })

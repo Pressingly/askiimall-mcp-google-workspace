@@ -13,9 +13,39 @@ from pydantic import Field
 from auth.service_decorator import require_google_service
 from core.server import server
 from core.utils import handle_http_errors
+from core.response import success_response
 from core.comments import create_comment_tools
 
 logger = logging.getLogger(__name__)
+
+
+def _map_slide(slide: Dict[str, Any], index: int) -> Dict[str, Any]:
+    """Map a raw slide to a clean shape."""
+    return {
+        "index": index,
+        "id": slide.get("objectId"),
+        "element_count": len(slide.get("pageElements", [])),
+    }
+
+
+def _map_page_element(element: Dict[str, Any]) -> Dict[str, Any]:
+    """Map a raw page element to a clean shape."""
+    mapped = {"id": element.get("objectId")}
+    if "shape" in element:
+        mapped["type"] = "shape"
+        mapped["shape_type"] = element["shape"].get("shapeType")
+    elif "table" in element:
+        mapped["type"] = "table"
+        mapped["rows"] = element["table"].get("rows")
+        mapped["columns"] = element["table"].get("columns")
+    elif "line" in element:
+        mapped["type"] = "line"
+        mapped["line_type"] = element["line"].get("lineType")
+    elif "image" in element:
+        mapped["type"] = "image"
+    else:
+        mapped["type"] = "unknown"
+    return mapped
 
 
 @server.tool()
@@ -43,16 +73,13 @@ async def create_presentation(
     )
 
     presentation_id = result.get('presentationId')
-    presentation_url = f"https://docs.google.com/presentation/d/{presentation_id}/edit"
-
-    confirmation_message = f"""Presentation Created Successfully for {user_google_email}:
-- Title: {title}
-- Presentation ID: {presentation_id}
-- URL: {presentation_url}
-- Slides: {len(result.get('slides', []))} slide(s) created"""
-
     logger.info(f"Presentation created successfully for {user_google_email}")
-    return confirmation_message
+    return success_response({
+        "id": presentation_id,
+        "title": title,
+        "link": f"https://docs.google.com/presentation/d/{presentation_id}/edit",
+        "slide_count": len(result.get('slides', [])),
+    })
 
 
 @server.tool()
@@ -75,28 +102,24 @@ async def get_presentation(
         service.presentations().get(presentationId=presentation_id).execute
     )
 
-    title = result.get('title', 'Untitled')
     slides = result.get('slides', [])
     page_size = result.get('pageSize', {})
-
-    slides_info = []
-    for i, slide in enumerate(slides, 1):
-        slide_id = slide.get('objectId', 'Unknown')
-        page_elements = slide.get('pageElements', [])
-        slides_info.append(f"  Slide {i}: ID {slide_id}, {len(page_elements)} element(s)")
-
-    confirmation_message = f"""Presentation Details for {user_google_email}:
-- Title: {title}
-- Presentation ID: {presentation_id}
-- URL: https://docs.google.com/presentation/d/{presentation_id}/edit
-- Total Slides: {len(slides)}
-- Page Size: {page_size.get('width', {}).get('magnitude', 'Unknown')} x {page_size.get('height', {}).get('magnitude', 'Unknown')} {page_size.get('width', {}).get('unit', '')}
-
-Slides Breakdown:
-{chr(10).join(slides_info) if slides_info else '  No slides found'}"""
+    width = page_size.get('width', {})
+    height = page_size.get('height', {})
 
     logger.info(f"Presentation retrieved successfully for {user_google_email}")
-    return confirmation_message
+    return success_response({
+        "id": presentation_id,
+        "title": result.get('title'),
+        "link": f"https://docs.google.com/presentation/d/{presentation_id}/edit",
+        "slide_count": len(slides),
+        "page_size": {
+            "width": width.get('magnitude'),
+            "height": height.get('magnitude'),
+            "unit": width.get('unit'),
+        } if width else None,
+        "slides": [_map_slide(s, i) for i, s in enumerate(slides, 1)],
+    })
 
 
 @server.tool()
@@ -128,27 +151,24 @@ async def batch_update_presentation(
     )
 
     replies = result.get('replies', [])
-
-    confirmation_message = f"""Batch Update Completed for {user_google_email}:
-- Presentation ID: {presentation_id}
-- URL: https://docs.google.com/presentation/d/{presentation_id}/edit
-- Requests Applied: {len(requests)}
-- Replies Received: {len(replies)}"""
-
-    if replies:
-        confirmation_message += "\n\nUpdate Results:"
-        for i, reply in enumerate(replies, 1):
-            if 'createSlide' in reply:
-                slide_id = reply['createSlide'].get('objectId', 'Unknown')
-                confirmation_message += f"\n  Request {i}: Created slide with ID {slide_id}"
-            elif 'createShape' in reply:
-                shape_id = reply['createShape'].get('objectId', 'Unknown')
-                confirmation_message += f"\n  Request {i}: Created shape with ID {shape_id}"
-            else:
-                confirmation_message += f"\n  Request {i}: Operation completed"
+    reply_details = []
+    for reply in replies:
+        if 'createSlide' in reply:
+            reply_details.append({"type": "createSlide", "id": reply['createSlide'].get('objectId')})
+        elif 'createShape' in reply:
+            reply_details.append({"type": "createShape", "id": reply['createShape'].get('objectId')})
+        elif 'createTable' in reply:
+            reply_details.append({"type": "createTable", "id": reply['createTable'].get('objectId')})
+        else:
+            reply_details.append({"type": "other"})
 
     logger.info(f"Batch update completed successfully for {user_google_email}")
-    return confirmation_message
+    return success_response({
+        "id": presentation_id,
+        "link": f"https://docs.google.com/presentation/d/{presentation_id}/edit",
+        "requests_applied": len(requests),
+        "replies": reply_details,
+    })
 
 
 @server.tool()
@@ -175,37 +195,16 @@ async def get_page(
         ).execute
     )
 
-    page_type = result.get('pageType', 'Unknown')
     page_elements = result.get('pageElements', [])
 
-    elements_info = []
-    for element in page_elements:
-        element_id = element.get('objectId', 'Unknown')
-        if 'shape' in element:
-            shape_type = element['shape'].get('shapeType', 'Unknown')
-            elements_info.append(f"  Shape: ID {element_id}, Type: {shape_type}")
-        elif 'table' in element:
-            table = element['table']
-            rows = table.get('rows', 0)
-            cols = table.get('columns', 0)
-            elements_info.append(f"  Table: ID {element_id}, Size: {rows}x{cols}")
-        elif 'line' in element:
-            line_type = element['line'].get('lineType', 'Unknown')
-            elements_info.append(f"  Line: ID {element_id}, Type: {line_type}")
-        else:
-            elements_info.append(f"  Element: ID {element_id}, Type: Unknown")
-
-    confirmation_message = f"""Page Details for {user_google_email}:
-- Presentation ID: {presentation_id}
-- Page ID: {page_object_id}
-- Page Type: {page_type}
-- Total Elements: {len(page_elements)}
-
-Page Elements:
-{chr(10).join(elements_info) if elements_info else '  No elements found'}"""
-
     logger.info(f"Page retrieved successfully for {user_google_email}")
-    return confirmation_message
+    return success_response({
+        "presentation_id": presentation_id,
+        "page_id": page_object_id,
+        "page_type": result.get('pageType'),
+        "element_count": len(page_elements),
+        "elements": [_map_page_element(e) for e in page_elements],
+    })
 
 
 @server.tool()
@@ -235,18 +234,13 @@ async def get_page_thumbnail(
         ).execute
     )
 
-    thumbnail_url = result.get('contentUrl', '')
-
-    confirmation_message = f"""Thumbnail Generated for {user_google_email}:
-- Presentation ID: {presentation_id}
-- Page ID: {page_object_id}
-- Thumbnail Size: {thumbnail_size}
-- Thumbnail URL: {thumbnail_url}
-
-You can view or download the thumbnail using the provided URL."""
-
     logger.info(f"Thumbnail generated successfully for {user_google_email}")
-    return confirmation_message
+    return success_response({
+        "presentation_id": presentation_id,
+        "page_id": page_object_id,
+        "size": thumbnail_size,
+        "thumbnail_url": result.get('contentUrl'),
+    })
 
 
 # Create comment management tools for slides
