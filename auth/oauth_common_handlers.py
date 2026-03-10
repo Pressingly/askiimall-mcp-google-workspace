@@ -94,6 +94,10 @@ async def handle_oauth_authorize(request: Request):
     })
     logger.debug(f"Stored credentials for state: {original_state[:10]}...")
 
+    # Ensure Google returns a refresh token for offline access
+    params["access_type"] = "offline"
+    params["prompt"] = "consent"
+    
     # Build Google authorization URL
     google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
 

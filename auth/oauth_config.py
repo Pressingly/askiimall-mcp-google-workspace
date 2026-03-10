@@ -25,7 +25,7 @@ class OAuthConfig:
         # Base server configuration
         self.base_uri = os.getenv("WORKSPACE_MCP_BASE_URI", "http://localhost")
         self.port = int(os.getenv("PORT", os.getenv("WORKSPACE_MCP_PORT", "8000")))
-        self.base_url = f"{self.base_uri}:8004"
+        self.base_url = f"{self.base_uri}"
 
         # OAuth client configuration (global defaults)
         self.client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
