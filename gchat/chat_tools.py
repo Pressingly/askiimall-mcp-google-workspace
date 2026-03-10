@@ -5,21 +5,41 @@ This module provides MCP tools for interacting with Google Chat API.
 """
 import logging
 import asyncio
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from googleapiclient.errors import HttpError
 from pydantic import Field
 
-# Auth & server utilities
 from auth.service_decorator import require_google_service
 from core.server import server
 from core.utils import handle_http_errors
+from core.response import success_response
 
 logger = logging.getLogger(__name__)
 
+
+def _map_space(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Map a raw Chat API space to a clean response shape."""
+    return {
+        "id": raw.get("name"),
+        "name": raw.get("displayName"),
+        "type": raw.get("spaceType"),
+    }
+
+
+def _map_chat_message(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Map a raw Chat API message to a clean response shape."""
+    return {
+        "id": raw.get("name"),
+        "sender": raw.get("sender", {}).get("displayName"),
+        "text": raw.get("text"),
+        "created": raw.get("createTime"),
+    }
+
+
 @server.tool()
-@require_google_service("chat", "chat_read")
 @handle_http_errors("list_spaces", service_type="chat")
+@require_google_service("chat", "chat_read")
 async def list_spaces(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
@@ -34,7 +54,6 @@ async def list_spaces(
     """
     logger.info(f"[list_spaces] Email={user_google_email}, Type={space_type}")
 
-    # Build filter based on space_type
     filter_param = None
     if space_type == "room":
         filter_param = "spaceType = SPACE"
@@ -50,21 +69,13 @@ async def list_spaces(
     )
 
     spaces = response.get('spaces', [])
-    if not spaces:
-        return f"No Chat spaces found for type '{space_type}'."
+    mapped = [_map_space(s) for s in spaces]
+    return success_response({"spaces": mapped, "count": len(mapped)})
 
-    output = [f"Found {len(spaces)} Chat spaces (type: {space_type}):"]
-    for space in spaces:
-        space_name = space.get('displayName', 'Unnamed Space')
-        space_id = space.get('name', '')
-        space_type_actual = space.get('spaceType', 'UNKNOWN')
-        output.append(f"- {space_name} (ID: {space_id}, Type: {space_type_actual})")
-
-    return "\n".join(output)
 
 @server.tool()
-@require_google_service("chat", "chat_read")
 @handle_http_errors("get_messages", service_type="chat")
+@require_google_service("chat", "chat_read")
 async def get_messages(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
@@ -79,13 +90,11 @@ async def get_messages(
     """
     logger.info(f"[get_messages] Space ID: '{space_id}' for user '{user_google_email}'")
 
-    # Get space info first
     space_info = await asyncio.to_thread(
         service.spaces().get(name=space_id).execute
     )
-    space_name = space_info.get('displayName', 'Unknown Space')
+    space_name = space_info.get('displayName')
 
-    # Get messages
     response = await asyncio.to_thread(
         service.spaces().messages().list(
             parent=space_id,
@@ -95,25 +104,17 @@ async def get_messages(
     )
 
     messages = response.get('messages', [])
-    if not messages:
-        return f"No messages found in space '{space_name}' (ID: {space_id})."
+    mapped = [_map_chat_message(m) for m in messages]
+    return success_response({
+        "space": {"id": space_id, "name": space_name},
+        "messages": mapped,
+        "count": len(mapped),
+    })
 
-    output = [f"Messages from '{space_name}' (ID: {space_id}):\n"]
-    for msg in messages:
-        sender = msg.get('sender', {}).get('displayName', 'Unknown Sender')
-        create_time = msg.get('createTime', 'Unknown Time')
-        text_content = msg.get('text', 'No text content')
-        msg_name = msg.get('name', '')
-
-        output.append(f"[{create_time}] {sender}:")
-        output.append(f"  {text_content}")
-        output.append(f"  (Message ID: {msg_name})\n")
-
-    return "\n".join(output)
 
 @server.tool()
-@require_google_service("chat", "chat_write")
 @handle_http_errors("send_message", service_type="chat")
+@require_google_service("chat", "chat_write")
 async def send_message(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
@@ -128,14 +129,9 @@ async def send_message(
     """
     logger.info(f"[send_message] Email: '{user_google_email}', Space: '{space_id}'")
 
-    message_body = {
-        'text': message_text
-    }
-
-    # Add thread key if provided (for threaded replies)
     request_params = {
         'parent': space_id,
-        'body': message_body
+        'body': {'text': message_text}
     }
     if thread_key:
         request_params['threadKey'] = thread_key
@@ -144,16 +140,16 @@ async def send_message(
         service.spaces().messages().create(**request_params).execute
     )
 
-    message_name = message.get('name', '')
-    create_time = message.get('createTime', '')
-
-    msg = f"Message sent to space '{space_id}' by {user_google_email}. Message ID: {message_name}, Time: {create_time}"
     logger.info(f"Successfully sent message to space '{space_id}' by {user_google_email}")
-    return msg
+    return success_response({
+        "message_id": message.get("name"),
+        "created": message.get("createTime"),
+    })
+
 
 @server.tool()
-@require_google_service("chat", "chat_read")
 @handle_http_errors("search_messages", service_type="chat")
+@require_google_service("chat", "chat_read")
 async def search_messages(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
@@ -163,13 +159,12 @@ async def search_messages(
 ) -> str:
     """
     Searches for messages in Google Chat spaces by text content.
-    
+
     Returns:
         str: A formatted list of messages matching the search query.
     """
     logger.info(f"[search_messages] Email={user_google_email}, Query='{query}'")
 
-    # If specific space provided, search within that space
     if space_id:
         response = await asyncio.to_thread(
             service.spaces().messages().list(
@@ -179,17 +174,14 @@ async def search_messages(
             ).execute
         )
         messages = response.get('messages', [])
-        context = f"space '{space_id}'"
     else:
-        # Search across all accessible spaces (this may require iterating through spaces)
-        # For simplicity, we'll search the user's spaces first
         spaces_response = await asyncio.to_thread(
             service.spaces().list(pageSize=100).execute
         )
         spaces = spaces_response.get('spaces', [])
 
         messages = []
-        for space in spaces[:10]:  # Limit to first 10 spaces to avoid timeout
+        for space in spaces[:10]:
             try:
                 space_messages = await asyncio.to_thread(
                     service.spaces().messages().list(
@@ -200,26 +192,16 @@ async def search_messages(
                 )
                 space_msgs = space_messages.get('messages', [])
                 for msg in space_msgs:
-                    msg['_space_name'] = space.get('displayName', 'Unknown')
+                    msg['_space_name'] = space.get('displayName')
                 messages.extend(space_msgs)
             except HttpError:
                 continue  # Skip spaces we can't access
-        context = "all accessible spaces"
 
-    if not messages:
-        return f"No messages found matching '{query}' in {context}."
-
-    output = [f"Found {len(messages)} messages matching '{query}' in {context}:"]
+    mapped = []
     for msg in messages:
-        sender = msg.get('sender', {}).get('displayName', 'Unknown Sender')
-        create_time = msg.get('createTime', 'Unknown Time')
-        text_content = msg.get('text', 'No text content')
-        space_name = msg.get('_space_name', 'Unknown Space')
+        m = _map_chat_message(msg)
+        if '_space_name' in msg:
+            m['space_name'] = msg['_space_name']
+        mapped.append(m)
 
-        # Truncate long messages
-        if len(text_content) > 100:
-            text_content = text_content[:100] + "..."
-
-        output.append(f"- [{create_time}] {sender} in '{space_name}': {text_content}")
-
-    return "\n".join(output)
+    return success_response({"messages": mapped, "count": len(mapped)})

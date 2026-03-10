@@ -7,17 +7,39 @@ This module provides MCP tools for interacting with Google Sheets API.
 import logging
 import asyncio
 import json
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict, Any
 
 from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.server import server
 from core.utils import handle_http_errors
+from core.response import success_response
 from core.comments import create_comment_tools
 
-# Configure module logger
 logger = logging.getLogger(__name__)
+
+
+def _map_spreadsheet(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Map a raw Drive file entry for a spreadsheet to a clean shape."""
+    return {
+        "id": raw.get("id"),
+        "name": raw.get("name"),
+        "modified": raw.get("modifiedTime"),
+        "link": raw.get("webViewLink"),
+    }
+
+
+def _map_sheet(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Map a raw Sheets API sheet object to a clean shape."""
+    props = raw.get("properties", {})
+    grid = props.get("gridProperties", {})
+    return {
+        "id": props.get("sheetId"),
+        "title": props.get("title"),
+        "rows": grid.get("rowCount"),
+        "cols": grid.get("columnCount"),
+    }
 
 
 @server.tool()
@@ -48,21 +70,10 @@ async def list_spreadsheets(
     )
 
     files = files_response.get("files", [])
-    if not files:
-        return f"No spreadsheets found for {user_google_email}."
+    mapped = [_map_spreadsheet(f) for f in files]
 
-    spreadsheets_list = [
-        f"- \"{file['name']}\" (ID: {file['id']}) | Modified: {file.get('modifiedTime', 'Unknown')} | Link: {file.get('webViewLink', 'No link')}"
-        for file in files
-    ]
-
-    text_output = (
-        f"Successfully listed {len(files)} spreadsheets for {user_google_email}:\n"
-        + "\n".join(spreadsheets_list)
-    )
-
-    logger.info(f"Successfully listed {len(files)} spreadsheets for {user_google_email}.")
-    return text_output
+    logger.info(f"Successfully listed {len(mapped)} spreadsheets for {user_google_email}.")
+    return success_response({"spreadsheets": mapped, "count": len(mapped)})
 
 
 @server.tool()
@@ -82,33 +93,24 @@ async def get_spreadsheet_info(
     logger.info(f"[get_spreadsheet_info] Invoked. Email: '{user_google_email}', Spreadsheet ID: {spreadsheet_id}")
 
     spreadsheet = await asyncio.to_thread(
-        service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute
+        service.spreadsheets().get(
+            spreadsheetId=spreadsheet_id,
+            fields="properties.title,spreadsheetId,spreadsheetUrl,sheets.properties"
+        ).execute
     )
 
-    title = spreadsheet.get("properties", {}).get("title", "Unknown")
+    title = spreadsheet.get("properties", {}).get("title")
     sheets = spreadsheet.get("sheets", [])
-
-    sheets_info = []
-    for sheet in sheets:
-        sheet_props = sheet.get("properties", {})
-        sheet_name = sheet_props.get("title", "Unknown")
-        sheet_id = sheet_props.get("sheetId", "Unknown")
-        grid_props = sheet_props.get("gridProperties", {})
-        rows = grid_props.get("rowCount", "Unknown")
-        cols = grid_props.get("columnCount", "Unknown")
-
-        sheets_info.append(
-            f"  - \"{sheet_name}\" (ID: {sheet_id}) | Size: {rows}x{cols}"
-        )
-
-    text_output = (
-        f"Spreadsheet: \"{title}\" (ID: {spreadsheet_id})\n"
-        f"Sheets ({len(sheets)}):\n"
-        + "\n".join(sheets_info) if sheets_info else "  No sheets found"
-    )
+    mapped_sheets = [_map_sheet(s) for s in sheets]
 
     logger.info(f"Successfully retrieved info for spreadsheet {spreadsheet_id} for {user_google_email}.")
-    return text_output
+    return success_response({
+        "id": spreadsheet.get("spreadsheetId"),
+        "title": title,
+        "link": spreadsheet.get("spreadsheetUrl"),
+        "sheets": mapped_sheets,
+        "sheet_count": len(mapped_sheets),
+    })
 
 
 @server.tool()
@@ -136,24 +138,13 @@ async def read_sheet_values(
     )
 
     values = result.get("values", [])
-    if not values:
-        return f"No data found in range '{range_name}' for {user_google_email}."
-
-    # Format the output as a readable table
-    formatted_rows = []
-    for i, row in enumerate(values, 1):
-        # Pad row with empty strings to show structure
-        padded_row = row + [""] * max(0, len(values[0]) - len(row)) if values else row
-        formatted_rows.append(f"Row {i:2d}: {padded_row}")
-
-    text_output = (
-        f"Successfully read {len(values)} rows from range '{range_name}' in spreadsheet {spreadsheet_id} for {user_google_email}:\n"
-        + "\n".join(formatted_rows[:50])  # Limit to first 50 rows for readability
-        + (f"\n... and {len(values) - 50} more rows" if len(values) > 50 else "")
-    )
 
     logger.info(f"Successfully read {len(values)} rows for {user_google_email}.")
-    return text_output
+    return success_response({
+        "values": values,
+        "rows": len(values),
+        "cols": max((len(row) for row in values), default=0),
+    })
 
 
 @server.tool()
@@ -183,7 +174,6 @@ async def modify_sheet_values(
             parsed_values = json.loads(values)
             if not isinstance(parsed_values, list):
                 raise ValueError(f"Values must be a list, got {type(parsed_values).__name__}")
-            # Validate it's a list of lists
             for i, row in enumerate(parsed_values):
                 if not isinstance(row, list):
                     raise ValueError(f"Row {i} must be a list, got {type(row).__name__}")
@@ -206,8 +196,8 @@ async def modify_sheet_values(
         )
 
         cleared_range = result.get("clearedRange", range_name)
-        text_output = f"Successfully cleared range '{cleared_range}' in spreadsheet {spreadsheet_id} for {user_google_email}."
         logger.info(f"Successfully cleared range '{cleared_range}' for {user_google_email}.")
+        return success_response({"cleared": True, "range": cleared_range})
     else:
         body = {"values": values}
 
@@ -223,17 +213,13 @@ async def modify_sheet_values(
             .execute
         )
 
-        updated_cells = result.get("updatedCells", 0)
-        updated_rows = result.get("updatedRows", 0)
-        updated_columns = result.get("updatedColumns", 0)
-
-        text_output = (
-            f"Successfully updated range '{range_name}' in spreadsheet {spreadsheet_id} for {user_google_email}. "
-            f"Updated: {updated_cells} cells, {updated_rows} rows, {updated_columns} columns."
-        )
-        logger.info(f"Successfully updated {updated_cells} cells for {user_google_email}.")
-
-    return text_output
+        logger.info(f"Successfully updated {result.get('updatedCells', 0)} cells for {user_google_email}.")
+        return success_response({
+            "updated_cells": result.get("updatedCells", 0),
+            "updated_rows": result.get("updatedRows", 0),
+            "updated_columns": result.get("updatedColumns", 0),
+            "range": result.get("updatedRange"),
+        })
 
 
 @server.tool()
@@ -254,9 +240,7 @@ async def create_spreadsheet(
     logger.info(f"[create_spreadsheet] Invoked. Email: '{user_google_email}', Title: {title}")
 
     spreadsheet_body = {
-        "properties": {
-            "title": title
-        }
+        "properties": {"title": title}
     }
 
     if sheet_names:
@@ -268,16 +252,12 @@ async def create_spreadsheet(
         service.spreadsheets().create(body=spreadsheet_body).execute
     )
 
-    spreadsheet_id = spreadsheet.get("spreadsheetId")
-    spreadsheet_url = spreadsheet.get("spreadsheetUrl")
-
-    text_output = (
-        f"Successfully created spreadsheet '{title}' for {user_google_email}. "
-        f"ID: {spreadsheet_id} | URL: {spreadsheet_url}"
-    )
-
-    logger.info(f"Successfully created spreadsheet for {user_google_email}. ID: {spreadsheet_id}")
-    return text_output
+    logger.info(f"Successfully created spreadsheet for {user_google_email}. ID: {spreadsheet.get('spreadsheetId')}")
+    return success_response({
+        "id": spreadsheet.get("spreadsheetId"),
+        "title": title,
+        "link": spreadsheet.get("spreadsheetUrl"),
+    })
 
 
 @server.tool()
@@ -301,9 +281,7 @@ async def create_sheet(
         "requests": [
             {
                 "addSheet": {
-                    "properties": {
-                        "title": sheet_name
-                    }
+                    "properties": {"title": sheet_name}
                 }
             }
         ]
@@ -317,12 +295,11 @@ async def create_sheet(
 
     sheet_id = response["replies"][0]["addSheet"]["properties"]["sheetId"]
 
-    text_output = (
-        f"Successfully created sheet '{sheet_name}' (ID: {sheet_id}) in spreadsheet {spreadsheet_id} for {user_google_email}."
-    )
-
     logger.info(f"Successfully created sheet for {user_google_email}. Sheet ID: {sheet_id}")
-    return text_output
+    return success_response({
+        "sheet": {"id": sheet_id, "title": sheet_name},
+        "spreadsheet_id": spreadsheet_id,
+    })
 
 
 # Create comment management tools for sheets
@@ -333,5 +310,3 @@ read_sheet_comments = _comment_tools['read_comments']
 create_sheet_comment = _comment_tools['create_comment']
 reply_to_sheet_comment = _comment_tools['reply_to_comment']
 resolve_sheet_comment = _comment_tools['resolve_comment']
-
-

@@ -18,12 +18,86 @@ from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.utils import handle_http_errors
+from core.response import success_response
 
 from core.server import server
 
 
 # Configure module logger
 logger = logging.getLogger(__name__)
+
+# Google Calendar API field projections
+CALENDAR_FIELDS = {
+    "list": "items(id,summary,primary,description,timeZone,backgroundColor)",
+    "list_events": "items(id,summary,start,end,htmlLink,description,location,status,attendees(email,displayName,responseStatus),conferenceData(entryPoints))",
+    "get_event": "id,summary,start,end,htmlLink,description,location,status,creator,organizer,attendees(email,displayName,responseStatus),conferenceData(entryPoints),reminders,attachments(fileUrl,title,mimeType),created,updated",
+}
+
+
+def _extract_meet_link(event: Dict[str, Any]) -> Optional[str]:
+    """Extract Google Meet link from event conference data."""
+    conference_data = event.get("conferenceData")
+    if not conference_data:
+        return None
+    for entry_point in conference_data.get("entryPoints", []):
+        if entry_point.get("entryPointType") == "video":
+            return entry_point.get("uri")
+    return None
+
+
+def _map_calendar(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Map a raw Calendar API calendar object to a clean response shape."""
+    return {
+        "id": raw["id"],
+        "title": raw.get("summary"),
+        "primary": raw.get("primary", False),
+        "description": raw.get("description"),
+        "timezone": raw.get("timeZone"),
+        "color": raw.get("backgroundColor"),
+    }
+
+
+def _map_event(raw: Dict[str, Any], compact: bool = False) -> Dict[str, Any]:
+    """Map a raw Calendar API event object to a clean response shape.
+
+    Args:
+        raw: Raw event dict from Google Calendar API.
+        compact: If True, return a compact shape for list views.
+    """
+    start = raw.get("start", {})
+    end = raw.get("end", {})
+    result = {
+        "id": raw.get("id"),
+        "title": raw.get("summary"),
+        "start": start.get("dateTime") or start.get("date"),
+        "end": end.get("dateTime") or end.get("date"),
+        "link": raw.get("htmlLink"),
+        "status": raw.get("status"),
+    }
+    if compact:
+        result["attendee_count"] = len(raw.get("attendees", []))
+    else:
+        result["description"] = raw.get("description")
+        result["location"] = raw.get("location")
+        result["attendees"] = [
+            {
+                "email": a.get("email"),
+                "name": a.get("displayName"),
+                "response": a.get("responseStatus"),
+            }
+            for a in raw.get("attendees", [])
+        ]
+        result["meet_link"] = _extract_meet_link(raw)
+        result["reminders"] = raw.get("reminders")
+        result["attachments"] = [
+            {"url": att.get("fileUrl"), "title": att.get("title"), "type": att.get("mimeType")}
+            for att in raw.get("attachments", [])
+        ]
+        result["creator"] = raw.get("creator", {}).get("email")
+        result["organizer"] = raw.get("organizer", {}).get("email")
+        result["created"] = raw.get("created")
+        result["updated"] = raw.get("updated")
+    return result
 
 
 def _parse_reminders_json(reminders_input: Optional[Union[str, List[Dict[str, Any]]]], function_name: str) -> List[Dict[str, Any]]:
@@ -173,22 +247,15 @@ async def list_calendars(
     logger.info(f"[list_calendars] Invoked. Email: '{user_google_email}'")
 
     calendar_list_response = await asyncio.to_thread(
-        lambda: service.calendarList().list().execute()
+        lambda: service.calendarList().list(
+            fields=CALENDAR_FIELDS["list"]
+        ).execute()
     )
     items = calendar_list_response.get("items", [])
-    if not items:
-        return f"No calendars found for {user_google_email}."
 
-    calendars_summary_list = [
-        f"- \"{cal.get('summary', 'No Summary')}\"{' (Primary)' if cal.get('primary') else ''} (ID: {cal['id']})"
-        for cal in items
-    ]
-    text_output = (
-        f"Successfully listed {len(items)} calendars for {user_google_email}:\n"
-        + "\n".join(calendars_summary_list)
-    )
-    logger.info(f"Successfully listed {len(items)} calendars for {user_google_email}.")
-    return text_output
+    calendars = [_map_calendar(cal) for cal in items]
+    logger.info(f"Successfully listed {len(calendars)} calendars for {user_google_email}.")
+    return success_response({"calendars": calendars, "count": len(calendars)})
 
 
 @server.tool()
@@ -246,6 +313,7 @@ async def get_events(
         "maxResults": max_results,
         "singleEvents": True,
         "orderBy": "startTime",
+        "fields": CALENDAR_FIELDS["list_events"],
     }
 
     if query:
@@ -257,27 +325,10 @@ async def get_events(
         .execute()
     )
     items = events_result.get("items", [])
-    if not items:
-        return f"No events found in calendar '{calendar_id}' for {user_google_email} for the specified time range."
 
-    event_details_list = []
-    for item in items:
-        summary = item.get("summary", "No Title")
-        start_time = item["start"].get("dateTime", item["start"].get("date"))
-        end_time = item["end"].get("dateTime", item["end"].get("date"))
-        link = item.get("htmlLink", "No Link")
-        event_id = item.get("id", "No ID")
-        # Include the start/end date, and event ID in the output so users can copy it for modify/delete operations
-        event_details_list.append(
-            f'- "{summary}" (Starts: {start_time}, Ends: {end_time}) ID: {event_id} | Link: {link}'
-        )
-
-    text_output = (
-        f"Successfully retrieved {len(items)} events from calendar '{calendar_id}' for {user_google_email}:\n"
-        + "\n".join(event_details_list)
-    )
-    logger.info(f"Successfully retrieved {len(items)} events for {user_google_email}.")
-    return text_output
+    events = [_map_event(item, compact=True) for item in items]
+    logger.info(f"Successfully retrieved {len(events)} events for {user_google_email}.")
+    return success_response({"events": events, "count": len(events)})
 
 
 @server.tool()
@@ -421,25 +472,11 @@ async def create_event(
                 conferenceDataVersion=1 if add_google_meet else 0
             ).execute()
         )
-    event_id = created_event.get("id", "No ID")
-    link = created_event.get("htmlLink", "No link available")
-    confirmation_message = f"Successfully created event '{created_event.get('summary', summary)}' (ID: {event_id}) for {user_google_email}. Link: {link}"
-
-    # Add Google Meet information if conference was created
-    if add_google_meet and "conferenceData" in created_event:
-        conference_data = created_event["conferenceData"]
-        if "entryPoints" in conference_data:
-            for entry_point in conference_data["entryPoints"]:
-                if entry_point.get("entryPointType") == "video":
-                    meet_link = entry_point.get("uri", "")
-                    if meet_link:
-                        confirmation_message += f" Google Meet: {meet_link}"
-                        break
-
+    mapped = _map_event(created_event, compact=False)
     logger.info(
-            f"Event created successfully for {user_google_email}. ID: {created_event.get('id')}, Link: {link}"
-        )
-    return confirmation_message
+        f"Event created successfully for {user_google_email}. ID: {mapped.get('id')}, Link: {mapped.get('link')}"
+    )
+    return success_response({"event": mapped})
 
 
 @server.tool()
@@ -610,26 +647,11 @@ async def modify_event(
         .execute()
     )
 
-    link = updated_event.get("htmlLink", "No link available")
-    confirmation_message = f"Successfully modified event '{updated_event.get('summary', summary)}' (ID: {event_id}) for {user_google_email}. Link: {link}"
-
-    # Add Google Meet information if conference was added
-    if add_google_meet is True and "conferenceData" in updated_event:
-        conference_data = updated_event["conferenceData"]
-        if "entryPoints" in conference_data:
-            for entry_point in conference_data["entryPoints"]:
-                if entry_point.get("entryPointType") == "video":
-                    meet_link = entry_point.get("uri", "")
-                    if meet_link:
-                        confirmation_message += f" Google Meet: {meet_link}"
-                        break
-    elif add_google_meet is False:
-        confirmation_message += " (Google Meet removed)"
-
+    mapped = _map_event(updated_event, compact=False)
     logger.info(
-        f"Event modified successfully for {user_google_email}. ID: {updated_event.get('id')}, Link: {link}"
+        f"Event modified successfully for {user_google_email}. ID: {mapped.get('id')}, Link: {mapped.get('link')}"
     )
-    return confirmation_message
+    return success_response({"event": mapped})
 
 
 @server.tool()
@@ -681,9 +703,8 @@ async def delete_event(
         lambda: service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
     )
 
-    confirmation_message = f"Successfully deleted event (ID: {event_id}) from calendar '{calendar_id}' for {user_google_email}."
     logger.info(f"Event deleted successfully for {user_google_email}. ID: {event_id}")
-    return confirmation_message
+    return success_response({"deleted": True, "event_id": event_id})
 
 
 @server.tool()
@@ -703,26 +724,11 @@ async def get_event(
     """
     logger.info(f"[get_event] Invoked. Email: '{user_google_email}', Event ID: {event_id}")
     event = await asyncio.to_thread(
-        lambda: service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+        lambda: service.events().get(
+            calendarId=calendar_id, eventId=event_id,
+            fields=CALENDAR_FIELDS["get_event"]
+        ).execute()
     )
-    summary = event.get("summary", "No Title")
-    start = event["start"].get("dateTime", event["start"].get("date"))
-    end = event["end"].get("dateTime", event["end"].get("date"))
-    link = event.get("htmlLink", "No Link")
-    description = event.get("description", "No Description")
-    location = event.get("location", "No Location")
-    attendees = event.get("attendees", [])
-    attendee_emails = ", ".join([a.get("email", "") for a in attendees]) if attendees else "None"
-    event_details = (
-        f'Event Details:\n'
-        f'- Title: {summary}\n'
-        f'- Starts: {start}\n'
-        f'- Ends: {end}\n'
-        f'- Description: {description}\n'
-        f'- Location: {location}\n'
-        f'- Attendees: {attendee_emails}\n'
-        f'- Event ID: {event_id}\n'
-        f'- Link: {link}'
-    )
+    mapped = _map_event(event, compact=False)
     logger.info(f"[get_event] Successfully retrieved event {event_id} for {user_google_email}.")
-    return event_details
+    return success_response(mapped)

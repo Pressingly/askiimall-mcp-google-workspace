@@ -6,15 +6,47 @@ This module provides MCP tools for interacting with Google Forms API.
 
 import logging
 import asyncio
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.server import server
 from core.utils import handle_http_errors
+from core.response import success_response
 
 logger = logging.getLogger(__name__)
+
+
+def _map_question(item: Dict[str, Any], index: int) -> Dict[str, Any]:
+    """Map a raw form item to a clean question shape."""
+    question_item = item.get("questionItem", {})
+    question = question_item.get("question", {})
+    return {
+        "index": index,
+        "title": item.get("title"),
+        "required": question.get("required", False),
+    }
+
+
+def _map_form_response(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Map a raw form response to a clean shape."""
+    answers_raw = raw.get("answers", {})
+    answers = []
+    for question_id, answer_data in answers_raw.items():
+        text_answers = answer_data.get("textAnswers", {}).get("answers", [])
+        values = [ans.get("value") for ans in text_answers if ans.get("value")]
+        answers.append({
+            "question_id": question_id,
+            "values": values if values else None,
+        })
+    return {
+        "response_id": raw.get("responseId"),
+        "created": raw.get("createTime"),
+        "last_submitted": raw.get("lastSubmittedTime"),
+        "answer_count": len(answers_raw),
+        "answers": answers,
+    }
 
 
 @server.tool()
@@ -52,12 +84,12 @@ async def create_form(
     )
 
     form_id = created_form.get("formId")
-    edit_url = f"https://docs.google.com/forms/d/{form_id}/edit"
-    responder_url = created_form.get("responderUri", f"https://docs.google.com/forms/d/{form_id}/viewform")
-
-    confirmation_message = f"Successfully created form '{created_form.get('info', {}).get('title', title)}' for {user_google_email}. Form ID: {form_id}. Edit URL: {edit_url}. Responder URL: {responder_url}"
-    logger.info(f"Form created successfully for {user_google_email}. ID: {form_id}")
-    return confirmation_message
+    return success_response({
+        "form_id": form_id,
+        "title": created_form.get("info", {}).get("title"),
+        "edit_url": f"https://docs.google.com/forms/d/{form_id}/edit",
+        "responder_url": created_form.get("responderUri"),
+    })
 
 
 @server.tool()
@@ -81,35 +113,19 @@ async def get_form(
     )
 
     form_info = form.get("info", {})
-    title = form_info.get("title", "No Title")
-    description = form_info.get("description", "No Description")
-    document_title = form_info.get("documentTitle", title)
-
-    edit_url = f"https://docs.google.com/forms/d/{form_id}/edit"
-    responder_url = form.get("responderUri", f"https://docs.google.com/forms/d/{form_id}/viewform")
-
     items = form.get("items", [])
-    questions_summary = []
-    for i, item in enumerate(items, 1):
-        item_title = item.get("title", f"Question {i}")
-        item_type = item.get("questionItem", {}).get("question", {}).get("required", False)
-        required_text = " (Required)" if item_type else ""
-        questions_summary.append(f"  {i}. {item_title}{required_text}")
+    questions = [_map_question(item, i) for i, item in enumerate(items, 1)]
 
-    questions_text = "\n".join(questions_summary) if questions_summary else "  No questions found"
-
-    result = f"""Form Details for {user_google_email}:
-- Title: "{title}"
-- Description: "{description}"
-- Document Title: "{document_title}"
-- Form ID: {form_id}
-- Edit URL: {edit_url}
-- Responder URL: {responder_url}
-- Questions ({len(items)} total):
-{questions_text}"""
-
-    logger.info(f"Successfully retrieved form for {user_google_email}. ID: {form_id}")
-    return result
+    return success_response({
+        "form_id": form_id,
+        "title": form_info.get("title"),
+        "description": form_info.get("description"),
+        "document_title": form_info.get("documentTitle"),
+        "edit_url": f"https://docs.google.com/forms/d/{form_id}/edit",
+        "responder_url": form.get("responderUri"),
+        "questions": questions,
+        "question_count": len(items),
+    })
 
 
 @server.tool()
@@ -139,9 +155,12 @@ async def set_publish_settings(
         service.forms().setPublishSettings(formId=form_id, body=settings_body).execute
     )
 
-    confirmation_message = f"Successfully updated publish settings for form {form_id} for {user_google_email}. Publish as template: {publish_as_template}, Require authentication: {require_authentication}"
     logger.info(f"Publish settings updated successfully for {user_google_email}. Form ID: {form_id}")
-    return confirmation_message
+    return success_response({
+        "form_id": form_id,
+        "publish_as_template": publish_as_template,
+        "require_authentication": require_authentication,
+    })
 
 
 @server.tool()
@@ -165,32 +184,9 @@ async def get_form_response(
         service.forms().responses().get(formId=form_id, responseId=response_id).execute
     )
 
-    response_id = response.get("responseId", "Unknown")
-    create_time = response.get("createTime", "Unknown")
-    last_submitted_time = response.get("lastSubmittedTime", "Unknown")
-
-    answers = response.get("answers", {})
-    answer_details = []
-    for question_id, answer_data in answers.items():
-        question_response = answer_data.get("textAnswers", {}).get("answers", [])
-        if question_response:
-            answer_text = ", ".join([ans.get("value", "") for ans in question_response])
-            answer_details.append(f"  Question ID {question_id}: {answer_text}")
-        else:
-            answer_details.append(f"  Question ID {question_id}: No answer provided")
-
-    answers_text = "\n".join(answer_details) if answer_details else "  No answers found"
-
-    result = f"""Form Response Details for {user_google_email}:
-- Form ID: {form_id}
-- Response ID: {response_id}
-- Created: {create_time}
-- Last Submitted: {last_submitted_time}
-- Answers:
-{answers_text}"""
-
-    logger.info(f"Successfully retrieved response for {user_google_email}. Response ID: {response_id}")
-    return result
+    mapped = _map_form_response(response)
+    mapped["form_id"] = form_id
+    return success_response(mapped)
 
 
 @server.tool()
@@ -225,27 +221,18 @@ async def list_form_responses(
     responses = responses_result.get("responses", [])
     next_page_token = responses_result.get("nextPageToken")
 
-    if not responses:
-        return f"No responses found for form {form_id} for {user_google_email}."
+    mapped = []
+    for r in responses:
+        mapped.append({
+            "response_id": r.get("responseId"),
+            "created": r.get("createTime"),
+            "last_submitted": r.get("lastSubmittedTime"),
+            "answer_count": len(r.get("answers", {})),
+        })
 
-    response_details = []
-    for i, response in enumerate(responses, 1):
-        response_id = response.get("responseId", "Unknown")
-        create_time = response.get("createTime", "Unknown")
-        last_submitted_time = response.get("lastSubmittedTime", "Unknown")
-
-        answers_count = len(response.get("answers", {}))
-        response_details.append(
-            f"  {i}. Response ID: {response_id} | Created: {create_time} | Last Submitted: {last_submitted_time} | Answers: {answers_count}"
-        )
-
-    pagination_info = f"\nNext page token: {next_page_token}" if next_page_token else "\nNo more pages."
-
-    result = f"""Form Responses for {user_google_email}:
-- Form ID: {form_id}
-- Total responses returned: {len(responses)}
-- Responses:
-{chr(10).join(response_details)}{pagination_info}"""
-
-    logger.info(f"Successfully retrieved {len(responses)} responses for {user_google_email}. Form ID: {form_id}")
-    return result
+    return success_response({
+        "form_id": form_id,
+        "responses": mapped,
+        "count": len(mapped),
+        "next_page_token": next_page_token,
+    })

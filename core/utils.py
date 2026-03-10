@@ -11,6 +11,7 @@ from typing import List, Optional
 
 from googleapiclient.errors import HttpError
 from .api_enablement import get_api_enablement_message
+from .response import error_response
 from auth.google_auth import GoogleAuthenticationError
 
 logger = logging.getLogger(__name__)
@@ -279,14 +280,16 @@ def handle_http_errors(tool_name: str, is_read_only: bool = False, service_type:
                 except HttpError as error:
                     user_google_email = kwargs.get("user_google_email", "N/A")
                     error_details = str(error)
-                    
+                    status_code = error.resp.status
+                    retryable = status_code in (429, 500, 502, 503, 504)
+
                     # Check if this is an API not enabled error
-                    if error.resp.status == 403 and "accessNotConfigured" in error_details:
+                    if status_code == 403 and "accessNotConfigured" in error_details:
                         enablement_msg = get_api_enablement_message(error_details, service_type)
-                        
+
                         if enablement_msg:
                             message = (
-                                f"API error in {tool_name}: {enablement_msg}\n\n"
+                                f"API error in {tool_name}: {enablement_msg} "
                                 f"User: {user_google_email}"
                             )
                         else:
@@ -301,9 +304,13 @@ def handle_http_errors(tool_name: str, is_read_only: bool = False, service_type:
                             f"You might need to re-authenticate for user '{user_google_email}'. "
                             f"LLM: Try 'start_google_auth' with the user's email and the appropriate service_name."
                         )
-                    
+
                     logger.error(f"API error in {tool_name}: {error}", exc_info=True)
-                    raise Exception(message) from error
+                    return error_response(
+                        code=status_code,
+                        message=message,
+                        retryable=retryable
+                    )
                 except TransientNetworkError:
                     # Re-raise without wrapping to preserve the specific error type
                     raise

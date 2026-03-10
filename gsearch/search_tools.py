@@ -7,15 +7,33 @@ This module provides MCP tools for interacting with Google Programmable Search E
 import logging
 import asyncio
 import os
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Dict, Any
 
 from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.server import server
 from core.utils import handle_http_errors
+from core.response import success_response
 
 logger = logging.getLogger(__name__)
+
+
+def _map_search_result(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Map a raw search result item to a clean shape."""
+    result = {
+        "title": item.get("title"),
+        "link": item.get("link"),
+        "snippet": item.get("snippet"),
+    }
+    pagemap = item.get("pagemap", {})
+    if "metatags" in pagemap and pagemap["metatags"]:
+        metatag = pagemap["metatags"][0]
+        if "og:type" in metatag:
+            result["type"] = metatag["og:type"]
+        if "article:published_time" in metatag:
+            result["published"] = metatag["article:published_time"]
+    return result
 
 
 @server.tool()
@@ -46,7 +64,7 @@ async def search_custom(
     api_key = os.environ.get('GOOGLE_PSE_API_KEY')
     if not api_key:
         raise ValueError("GOOGLE_PSE_API_KEY environment variable not set. Please set it to your Google Custom Search API key.")
-    
+
     cx = os.environ.get('GOOGLE_PSE_ENGINE_ID')
     if not cx:
         raise ValueError("GOOGLE_PSE_ENGINE_ID environment variable not set. Please set it to your Programmable Search Engine ID.")
@@ -86,53 +104,24 @@ async def search_custom(
 
     # Extract search information
     search_info = result.get('searchInformation', {})
-    total_results = search_info.get('totalResults', '0')
-    search_time = search_info.get('searchTime', 0)
-
-    # Extract search results
     items = result.get('items', [])
+    mapped = [_map_search_result(item) for item in items]
 
-    # Format the response
-    confirmation_message = f"""Search Results for {user_google_email}:
-- Query: "{q}"
-- Search Engine ID: {cx}
-- Total Results: {total_results}
-- Search Time: {search_time:.3f} seconds
-- Results Returned: {len(items)} (showing {start} to {start + len(items) - 1})
-
-"""
-
-    if items:
-        confirmation_message += "Results:\n"
-        for i, item in enumerate(items, start):
-            title = item.get('title', 'No title')
-            link = item.get('link', 'No link')
-            snippet = item.get('snippet', 'No description available').replace('\n', ' ')
-
-            confirmation_message += f"\n{i}. {title}\n"
-            confirmation_message += f"   URL: {link}\n"
-            confirmation_message += f"   Snippet: {snippet}\n"
-
-            # Add additional metadata if available
-            if 'pagemap' in item:
-                pagemap = item['pagemap']
-                if 'metatags' in pagemap and pagemap['metatags']:
-                    metatag = pagemap['metatags'][0]
-                    if 'og:type' in metatag:
-                        confirmation_message += f"   Type: {metatag['og:type']}\n"
-                    if 'article:published_time' in metatag:
-                        confirmation_message += f"   Published: {metatag['article:published_time'][:10]}\n"
-    else:
-        confirmation_message += "\nNo results found."
-
-    # Add information about pagination
+    # Pagination
     queries = result.get('queries', {})
+    next_start = None
     if 'nextPage' in queries:
-        next_start = queries['nextPage'][0].get('startIndex', 0)
-        confirmation_message += f"\n\nTo see more results, search again with start={next_start}"
+        next_start = queries['nextPage'][0].get('startIndex')
 
     logger.info(f"Search completed successfully for {user_google_email}")
-    return confirmation_message
+    return success_response({
+        "query": q,
+        "total_results": search_info.get('totalResults'),
+        "search_time": search_info.get('searchTime'),
+        "results": mapped,
+        "count": len(mapped),
+        "next_start": next_start,
+    })
 
 
 @server.tool()
@@ -152,7 +141,7 @@ async def get_search_engine_info(
     api_key = os.environ.get('GOOGLE_PSE_API_KEY')
     if not api_key:
         raise ValueError("GOOGLE_PSE_API_KEY environment variable not set. Please set it to your Google Custom Search API key.")
-    
+
     cx = os.environ.get('GOOGLE_PSE_ENGINE_ID')
     if not cx:
         raise ValueError("GOOGLE_PSE_ENGINE_ID environment variable not set. Please set it to your Programmable Search Engine ID.")
@@ -173,31 +162,26 @@ async def get_search_engine_info(
 
     # Extract context information
     context = result.get('context', {})
-    title = context.get('title', 'Unknown')
 
-    confirmation_message = f"""Search Engine Information for {user_google_email}:
-- Search Engine ID: {cx}
-- Title: {title}
-"""
-
-    # Add facet information if available
+    refinements = None
     if 'facets' in context:
-        confirmation_message += "\nAvailable Refinements:\n"
+        refinements = []
         for facet in context['facets']:
             for item in facet:
-                label = item.get('label', 'Unknown')
-                anchor = item.get('anchor', 'Unknown')
-                confirmation_message += f"  - {label} (anchor: {anchor})\n"
+                refinements.append({
+                    "label": item.get("label"),
+                    "anchor": item.get("anchor"),
+                })
 
-    # Add search information
     search_info = result.get('searchInformation', {})
-    if search_info:
-        total_results = search_info.get('totalResults', 'Unknown')
-        confirmation_message += "\nSearch Statistics:\n"
-        confirmation_message += f"  - Total indexed results: {total_results}\n"
 
     logger.info(f"Search engine info retrieved successfully for {user_google_email}")
-    return confirmation_message
+    return success_response({
+        "engine_id": cx,
+        "title": context.get("title"),
+        "refinements": refinements,
+        "total_indexed_results": search_info.get("totalResults"),
+    })
 
 
 @server.tool()

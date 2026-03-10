@@ -16,9 +16,26 @@ from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.utils import extract_office_xml_text, handle_http_errors
+from core.response import success_response
 from core.server import server
 
 logger = logging.getLogger(__name__)
+
+
+def _map_file(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Map a raw Drive API file object to a clean response shape."""
+    result = {
+        "id": raw.get("id"),
+        "name": raw.get("name"),
+        "type": raw.get("mimeType"),
+        "link": raw.get("webViewLink"),
+        "modified": raw.get("modifiedTime"),
+    }
+    if "size" in raw:
+        result["size"] = raw.get("size")
+    if "iconLink" in raw:
+        result["icon"] = raw.get("iconLink")
+    return result
 
 # Precompiled regex patterns for Drive query detection
 DRIVE_QUERY_PATTERNS = [
@@ -116,17 +133,13 @@ async def search_drive_files(
         service.files().list(**list_params).execute
     )
     files = results.get('files', [])
-    if not files:
-        return f"No files found for '{query}'."
+    next_page_token = results.get('nextPageToken')
 
-    formatted_files_text_parts = [f"Found {len(files)} files for {user_google_email} matching '{query}':"]
-    for item in files:
-        size_str = f", Size: {item.get('size', 'N/A')}" if 'size' in item else ""
-        formatted_files_text_parts.append(
-            f"- Name: \"{item['name']}\" (ID: {item['id']}, Type: {item['mimeType']}{size_str}, Modified: {item.get('modifiedTime', 'N/A')}) Link: {item.get('webViewLink', '#')}"
-        )
-    text_output = "\n".join(formatted_files_text_parts)
-    return text_output
+    mapped = [_map_file(f) for f in files]
+    data = {"files": mapped, "count": len(mapped)}
+    if next_page_token:
+        data["next_page_token"] = next_page_token
+    return success_response(data)
 
 @server.tool()
 @handle_http_errors("get_drive_file_content", is_read_only=True, service_type="drive")
@@ -209,12 +222,15 @@ async def get_drive_file_content(
                 f"{len(file_content_bytes)} bytes]"
             )
 
-    # Assemble response
-    header = (
-        f'File: "{file_name}" (ID: {file_id}, Type: {mime_type})\n'
-        f'Link: {file_metadata.get("webViewLink", "#")}\n\n--- CONTENT ---\n'
-    )
-    return header + body_text
+    return success_response({
+        "file": {
+            "id": file_id,
+            "name": file_name,
+            "type": mime_type,
+            "link": file_metadata.get("webViewLink"),
+        },
+        "content": body_text,
+    })
 
 
 @server.tool()
@@ -256,17 +272,13 @@ async def list_drive_items(
         service.files().list(**list_params).execute
     )
     files = results.get('files', [])
-    if not files:
-        return f"No items found in folder '{folder_id}'."
+    next_page_token = results.get('nextPageToken')
 
-    formatted_items_text_parts = [f"Found {len(files)} items in folder '{folder_id}' for {user_google_email}:"]
-    for item in files:
-        size_str = f", Size: {item.get('size', 'N/A')}" if 'size' in item else ""
-        formatted_items_text_parts.append(
-            f"- Name: \"{item['name']}\" (ID: {item['id']}, Type: {item['mimeType']}{size_str}, Modified: {item.get('modifiedTime', 'N/A')}) Link: {item.get('webViewLink', '#')}"
-        )
-    text_output = "\n".join(formatted_items_text_parts)
-    return text_output
+    mapped = [_map_file(f) for f in files]
+    data = {"items": mapped, "count": len(mapped)}
+    if next_page_token:
+        data["next_page_token"] = next_page_token
+    return success_response(data)
 
 @server.tool()
 @handle_http_errors("create_drive_file", service_type="drive")
@@ -328,7 +340,11 @@ async def create_drive_file(
         ).execute
     )
 
-    link = created_file.get('webViewLink', 'No link available')
-    confirmation_message = f"Successfully created file '{created_file.get('name', file_name)}' (ID: {created_file.get('id', 'N/A')}) in folder '{folder_id}' for {user_google_email}. Link: {link}"
-    logger.info(f"Successfully created file. Link: {link}")
-    return confirmation_message
+    logger.info(f"Successfully created file. Link: {created_file.get('webViewLink')}")
+    return success_response({
+        "file": {
+            "id": created_file.get("id"),
+            "name": created_file.get("name"),
+            "link": created_file.get("webViewLink"),
+        }
+    })
