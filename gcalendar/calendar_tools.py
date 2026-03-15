@@ -600,7 +600,7 @@ async def modify_event(
             "summary": summary,
             "description": description,
             "location": location,
-            "attendees": attendees,
+            "attendees": event_body.get("attendees"),
             "start": event_body.get("start"),
             "end": event_body.get("end")
         })
