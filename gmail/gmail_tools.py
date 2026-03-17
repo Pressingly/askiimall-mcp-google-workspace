@@ -8,6 +8,7 @@ import logging
 import asyncio
 import base64
 import ssl
+from pathlib import Path
 from typing import Optional, List, Dict, Literal
 
 from email.mime.text import MIMEText
@@ -30,6 +31,12 @@ logger = logging.getLogger(__name__)
 GMAIL_BATCH_SIZE = 25
 GMAIL_REQUEST_DELAY = 0.1
 HTML_BODY_TRUNCATE_LIMIT = 20000
+
+GMAIL_DRAFT_VIEW_URI = "ui://gmail/draft-app.html"
+_GMAIL_DRAFT_APP_HTML_PATH = Path(__file__).parent / "views" / "draft_gmail_message.html"
+_GMAIL_DRAFT_UI_META = {
+    "ui": {"resourceUri": GMAIL_DRAFT_VIEW_URI},
+}
 
 
 def _extract_message_body(payload):
@@ -553,7 +560,7 @@ async def send_gmail_message(
     })
 
 
-@server.tool()
+@server.tool(meta=_GMAIL_DRAFT_UI_META)
 @handle_http_errors("draft_gmail_message", service_type="gmail")
 @require_google_service("gmail", GMAIL_COMPOSE_SCOPE)
 async def draft_gmail_message(
@@ -951,3 +958,27 @@ async def batch_modify_gmail_message_labels(
 
     return success_response({"modified_count": len(message_ids)})
 
+
+# ──────────────────────────────────────────────────────────────
+# MCP Apps Resource: Gmail Draft Compose UI
+# ──────────────────────────────────────────────────────────────
+
+@server.resource(
+    GMAIL_DRAFT_VIEW_URI,
+    mime_type="text/html",
+    name="Gmail Draft UI",
+    meta={"ui": {
+        "csp": {"resourceDomains": ["https://esm.sh"]},
+        "permissions": {"popups": True},
+    }},
+)
+def gmail_draft_ui_resource() -> str:
+    """Serves the interactive email compose card for draft_gmail_message."""
+    return _GMAIL_DRAFT_APP_HTML_PATH.read_text()
+
+
+# Patch mime_type to text/html;profile=mcp-app
+# FastMCP 2.11.1 regex rejects semicolons — bypass Pydantic validation
+_draft_res = server._resource_manager._resources.get(GMAIL_DRAFT_VIEW_URI)
+if _draft_res:
+    object.__setattr__(_draft_res, "mime_type", "text/html;profile=mcp-app")
