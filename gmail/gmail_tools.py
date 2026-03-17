@@ -32,7 +32,7 @@ GMAIL_BATCH_SIZE = 25
 GMAIL_REQUEST_DELAY = 0.1
 HTML_BODY_TRUNCATE_LIMIT = 20000
 
-GMAIL_DRAFT_VIEW_URI = "ui://gmail/draft-app.html"
+GMAIL_DRAFT_VIEW_URI = "ui://gmail/draft_gmail_message.html"
 _GMAIL_DRAFT_APP_HTML_PATH = Path(__file__).parent / "views" / "draft_gmail_message.html"
 _GMAIL_DRAFT_UI_META = {
     "ui": {"resourceUri": GMAIL_DRAFT_VIEW_URI},
