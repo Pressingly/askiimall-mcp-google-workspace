@@ -59,12 +59,14 @@ import asyncio
 import uuid
 import math
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Literal, Optional
 
 import base64
 import httpx
 from pydantic import Field
 from mcp.types import TextContent, ImageContent
+
+from googleapiclient.errors import HttpError
 
 from auth.service_decorator import require_google_service
 from core.server import server
@@ -157,9 +159,24 @@ def _hex_to_rgb(hex_color: str) -> Dict[str, float]:
     }
 
 
+def _rgb_to_hex(rgb: dict) -> Optional[str]:
+    """Convert Google Slides API RGB dict (0.0-1.0) to '#RRGGBB'."""
+    if not rgb:
+        return None
+    r = int(rgb.get("red", 0) * 255)
+    g = int(rgb.get("green", 0) * 255)
+    b = int(rgb.get("blue", 0) * 255)
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
 def _pt_to_emu(pt: float) -> int:
     """Convert points to EMU (English Metric Units). 1 pt = 12700 EMU."""
     return int(pt * 12700)
+
+
+def _emu_to_pt(emu) -> float:
+    """Convert EMU to points. 1 pt = 12700 EMU."""
+    return round(emu / 12700, 1) if emu else 0
 
 
 def _element_properties(slide_id: str, x: float, y: float, width: float, height: float) -> Dict:
@@ -309,29 +326,132 @@ def _map_slide(slide: Dict[str, Any], index: int) -> Dict[str, Any]:
 
 
 def _map_page_element(element: Dict[str, Any]) -> Dict[str, Any]:
-    """Map a raw page element to a clean shape."""
+    """Map a raw page element to a structured dict with position, text, and style."""
     mapped = {"id": element.get("objectId")}
+
+    # Position (common to all element types)
+    transform = element.get("transform", {})
+    size = element.get("size", {})
+    mapped["position"] = {
+        "x": _emu_to_pt(transform.get("translateX", 0)),
+        "y": _emu_to_pt(transform.get("translateY", 0)),
+        "width": _emu_to_pt(size.get("width", {}).get("magnitude", 0)),
+        "height": _emu_to_pt(size.get("height", {}).get("magnitude", 0)),
+    }
+
     if "shape" in element:
         mapped["type"] = "shape"
         mapped["shape_type"] = element["shape"].get("shapeType")
         placeholder = element["shape"].get("placeholder", {})
         if placeholder.get("type"):
             mapped["placeholder_type"] = placeholder["type"]
+
+        # Plain text + length
         text = _extract_text(element["shape"].get("text"))
-        if text:
-            mapped["text"] = text
+        mapped["text"] = text
+        mapped["text_length"] = len(text) if text else 0
+
+        # Text runs with formatting (only non-default props included)
+        text_elements = element["shape"].get("text", {}).get("textElements", [])
+        text_runs = []
+        for te in text_elements:
+            tr = te.get("textRun")
+            if not tr:
+                continue
+            style = tr.get("style", {})
+            run = {
+                "content": tr.get("content", ""),
+                "start_index": te.get("startIndex", 0),
+                "end_index": te.get("endIndex", 0),
+            }
+            if style.get("bold"):
+                run["bold"] = True
+            if style.get("italic"):
+                run["italic"] = True
+            if style.get("underline"):
+                run["underline"] = True
+            if style.get("fontSize"):
+                run["font_size"] = style["fontSize"].get("magnitude")
+            if style.get("fontFamily"):
+                run["font_family"] = style["fontFamily"]
+            fg = style.get("foregroundColor", {}).get("opaqueColor", {}).get("rgbColor")
+            if fg:
+                run["color"] = _rgb_to_hex(fg)
+            link_url = style.get("link", {}).get("url")
+            if link_url:
+                run["link_url"] = link_url
+            text_runs.append(run)
+        if text_runs:
+            mapped["text_runs"] = text_runs
+
+        # Shape fill/outline colors
+        props = element["shape"].get("shapeProperties", {})
+        fill_rgb = props.get("shapeBackgroundFill", {}).get("solidFill", {}).get("color", {}).get("rgbColor")
+        if fill_rgb:
+            mapped["fill_color"] = _rgb_to_hex(fill_rgb)
+        outline_rgb = props.get("outline", {}).get("outlineFill", {}).get("solidFill", {}).get("color", {}).get("rgbColor")
+        if outline_rgb:
+            mapped["outline_color"] = _rgb_to_hex(outline_rgb)
+
     elif "table" in element:
         mapped["type"] = "table"
-        mapped["rows"] = element["table"].get("rows")
-        mapped["columns"] = element["table"].get("columns")
+        table = element["table"]
+        mapped["rows"] = table.get("rows")
+        mapped["columns"] = table.get("columns")
+        cells = []
+        for row in table.get("tableRows", []):
+            row_data = []
+            for cell in row.get("tableCells", []):
+                row_data.append(_extract_text(cell.get("text")) or "")
+            cells.append(row_data)
+        if cells:
+            mapped["cell_data"] = cells
+
     elif "line" in element:
         mapped["type"] = "line"
-        mapped["line_type"] = element["line"].get("lineType")
+        line = element["line"]
+        mapped["line_type"] = line.get("lineType")
+        mapped["line_category"] = line.get("lineCategory")
+        props = line.get("lineProperties", {})
+        weight = props.get("weight", {}).get("magnitude")
+        if weight:
+            mapped["weight_pt"] = weight
+        dash = props.get("dashStyle")
+        if dash:
+            mapped["dash_style"] = dash
+        fill_rgb = props.get("lineFill", {}).get("solidFill", {}).get("color", {}).get("rgbColor")
+        if fill_rgb:
+            mapped["color"] = _rgb_to_hex(fill_rgb)
+
     elif "image" in element:
         mapped["type"] = "image"
+        img = element["image"]
+        mapped["content_url"] = img.get("contentUrl")
+        mapped["source_url"] = img.get("sourceUrl")
+
     elif "video" in element:
         mapped["type"] = "video"
-        mapped["video_source"] = element["video"].get("source")
+        vid = element["video"]
+        mapped["video_source"] = vid.get("source")
+        mapped["video_id"] = vid.get("id")
+        mapped["video_url"] = vid.get("url")
+
+    elif "sheetsChart" in element:
+        mapped["type"] = "sheets_chart"
+        chart = element["sheetsChart"]
+        mapped["spreadsheet_id"] = chart.get("spreadsheetId")
+        mapped["chart_id"] = chart.get("chartId")
+        mapped["content_url"] = chart.get("contentUrl")
+
+    elif "wordArt" in element:
+        mapped["type"] = "word_art"
+        mapped["rendered_text"] = element["wordArt"].get("renderedText")
+
+    elif "elementGroup" in element:
+        mapped["type"] = "group"
+        children = element["elementGroup"].get("children", [])
+        mapped["children"] = [_map_page_element(c) for c in children]
+
     else:
         mapped["type"] = "unknown"
     return mapped
@@ -432,8 +552,8 @@ async def _add_single_slide(service, presentation_id: str, title: Optional[str],
 async def create_presentation(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
-    title: str = Field("Untitled Presentation", description="The title for the new presentation. This title is also auto-filled into the first slide's heading. PLAIN TEXT ONLY."),
-    subtitle: str = Field(None, description="Optional subtitle for the auto-generated first (cover) slide. PLAIN TEXT ONLY. Example: 'Prepared by Strategy Team — March 2026'"),
+    title: str = Field("Untitled Presentation", description="The title for the new presentation. This title is also auto-filled into the first slide's heading. PLAIN TEXT ONLY — no markdown (**, #, -). Markdown renders as literal characters on slide."),
+    subtitle: str = Field(None, description="Optional subtitle for the auto-generated first (cover) slide. PLAIN TEXT ONLY — no markdown (**, #, -). Markdown renders as literal characters on slide. Example: 'Prepared by Strategy Team — March 2026'"),
     slides: Optional[List[Dict[str, Any]]] = Field(None, description="""Optional list of slide definitions to create after the cover slide, so you can build an entire deck in one call.
 
 Each slide is a dict with these keys (all optional except layout):
@@ -489,6 +609,9 @@ FULL PROFESSIONAL DECK EXAMPLE:
       Step 4: format_slide_text for styling (bold, color, font)
       Step 5: set_slide_background for slide backgrounds
       Step 6: update_shape_properties for shape fills/outlines
+
+    NOTE: Each slide requires 3-4 API calls. For large decks (20+ slides), Google rate limits
+    (300 requests/minute) may apply. Consider creating in batches if needed.
 
     MANDATORY — THUMBNAIL VERIFICATION FOR STYLING:
     After creating the presentation, you MUST call get_page_thumbnail(slide_id=...)
@@ -587,6 +710,11 @@ async def get_presentation(
     - Getting the list of slide IDs, titles, and content in a presentation
     - Finding a specific slide's ID before updating or reading its content
     - Checking how many slides exist
+
+    NEXT STEP — GET ELEMENT IDs:
+    This tool returns slide-level data (slide_id, title, body, element_count) but NOT individual
+    element IDs. To get element IDs for styling (needed by format_slide_text, update_shape_properties,
+    transform_element), call get_page(slide_id=...) on the specific slide.
 
     VISUAL INSPECTION WORKFLOW (MANDATORY before styling):
     To visually inspect or improve slides, use this tool first to get slide IDs,
@@ -865,6 +993,36 @@ async def batch_update_presentation(
         }
     }}
 
+    ═══ CHARTS & VIDEO ═══
+
+    # Refresh a linked Sheets chart to pull latest data
+    {"refreshSheetsChart": {"objectId": "<chart_id>"}}
+
+    # Replace all shapes containing {{chart}} with a Sheets chart
+    {"replaceAllShapesWithSheetsChart": {
+        "spreadsheetId": "<spreadsheet_id>",
+        "chartId": 12345,
+        "linkingMode": "LINKED",
+        "containsText": {"text": "{{chart}}", "matchCase": true}
+    }}
+
+    # Video autoplay and timing (seconds)
+    {"updateVideoProperties": {
+        "objectId": "<video_id>",
+        "videoProperties": {"autoPlay": true, "start": 10, "end": 60},
+        "fields": "autoPlay,start,end"
+    }}
+
+    ═══ PARAGRAPH STYLE ═══
+
+    # Line spacing (percentage, 100=single) and paragraph margins
+    {"updateParagraphStyle": {
+        "objectId": "<element_id>",
+        "textRange": {"type": "ALL"},
+        "style": {"lineSpacing": 150, "spaceAbove": {"magnitude": 10, "unit": "PT"}, "spaceBelow": {"magnitude": 5, "unit": "PT"}},
+        "fields": "lineSpacing,spaceAbove,spaceBelow"
+    }}
+
     ═══ ACCESSIBILITY ═══
 
     # Set alt text for screen readers
@@ -919,25 +1077,35 @@ async def get_page(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
-    slide_id: str = Field(..., description="The slide ID to inspect. NEVER guess or hardcode (e.g. 'p' is wrong). Get the actual ID from: create_presentation response (slides_created[].slide_id), get_presentation response (slides[].slide_id), or add_slide response (slide_id)."),
+    slide_id: str = Field(..., description="The slide ID to inspect. NEVER guess — always get from API responses. Get from: create_presentation (slides_created[].slide_id), get_presentation (slides[].slide_id), or add_slide (slide_id). slide_id is NOT element_id — element_id starts with img_/shape_/line_/tbl_/vid_."),
 ) -> str:
     """
-    Get details about a specific slide: all element IDs, types, and text content.
+    Get full details about a specific slide: elements, text, formatting, positions, and styles.
 
     USE THIS FOR:
     - Finding element IDs on a slide (shapes, images, tables, etc.)
-    - Reading text content (title, body, subtitle, speaker notes)
-    - Understanding elements before modifying them
-    - Getting placeholder IDs for format_slide_text
+    - Reading text content and formatting (font, size, color, bold, italic)
+    - Getting text_length for format_slide_text start_index/end_index
+    - Understanding element positions (x, y, width, height in points)
+    - Checking fill/outline colors and slide background
 
     VISUAL INSPECTION WORKFLOW (MANDATORY before styling):
     To visually inspect slides, use get_page_thumbnail(slide_id=...) BEFORE making
     any styling changes. Work on one slide at a time: inspect → change → verify.
 
     Returns:
-        str: JSON with slide metadata, elements array, and text content.
-             Elements: id, type, shape_type, placeholder_type, text, rows, columns, etc.
+        str: JSON with slide metadata, elements array, background, and text content.
+             All elements have: id, type, position {x, y, width, height in pt}.
+             shape: shape_type, placeholder_type, text, text_length, text_runs[], fill_color, outline_color.
+             table: rows, columns, cell_data[][] (2D text array).
+             line: line_type, line_category, weight_pt, dash_style, color.
+             image: content_url, source_url.
+             video: video_source, video_id, video_url.
+             sheets_chart: spreadsheet_id, chart_id, content_url.
+             word_art: rendered_text.
+             group: children[] (recursive element array).
              Content: title, body, subtitle, speaker_notes (each null if empty).
+             Background: color, image_url.
     """
     logger.info(f"[get_page] Invoked. Email: '{user_google_email}', Presentation: '{presentation_id}', Slide: '{slide_id}'")
 
@@ -973,6 +1141,16 @@ async def get_page(
             content["speaker_notes"] = _extract_text(shape.get("text"))
             break
 
+    # Extract background
+    bg = result.get("pageProperties", {}).get("pageBackgroundFill", {})
+    background = {}
+    bg_rgb = bg.get("solidFill", {}).get("color", {}).get("rgbColor")
+    if bg_rgb:
+        background["color"] = _rgb_to_hex(bg_rgb)
+    bg_image = bg.get("stretchedPictureFill", {}).get("contentUrl")
+    if bg_image:
+        background["image_url"] = bg_image
+
     logger.info(f"Page retrieved successfully for {user_google_email}")
     return success_response({
         "presentation_id": presentation_id,
@@ -980,6 +1158,7 @@ async def get_page(
         "page_type": result.get('pageType'),
         "element_count": len(page_elements),
         "elements": [_map_page_element(e) for e in page_elements],
+        "background": background,
         **content,
     })
 
@@ -991,8 +1170,8 @@ async def get_page_thumbnail(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
-    slide_id: str = Field(..., description="The slide ID to get thumbnail for. NEVER guess or hardcode (e.g. 'p' is wrong). Get the actual ID from: create_presentation response (slides_created[].slide_id), get_presentation response (slides[].slide_id), or add_slide response (slide_id)."),
-    thumbnail_size: str = Field("SMALL", description="""Thumbnail resolution. The image is returned inline — larger sizes consume significantly more tokens.
+    slide_id: str = Field(..., description="The slide ID to get thumbnail for. NEVER guess — always get from API responses. Get from: create_presentation (slides_created[].slide_id), get_presentation (slides[].slide_id), or add_slide (slide_id). slide_id is NOT element_id — element_id starts with img_/shape_/line_/tbl_/vid_."),
+    thumbnail_size: Literal["SMALL", "MEDIUM", "LARGE"] = Field("SMALL", description="""Thumbnail resolution. The image is returned inline — larger sizes consume significantly more tokens.
   'SMALL'  (default) — ~220px wide, ~15-25KB, low token cost. Best for routine inspect→change→verify steps.
   'MEDIUM' — ~800px wide, ~80-150KB, moderate token cost. Use when you need to read small text or check fine details.
   'LARGE'  — ~1600px wide, ~350-800KB, high token cost. Only use when you need pixel-level precision.
@@ -1085,7 +1264,11 @@ WRONG examples — DO NOT do this:
 
 Not available for TITLE_ONLY and MAIN_POINT layouts."""),
     speaker_notes: str = Field(None, description="Speaker notes shown in presenter view. PLAIN TEXT ONLY. Use \\n for new lines. For talking points, timing cues, or additional context not shown on the slide."),
-    layout: str = Field("TITLE_AND_BODY", description="""Slide layout. Options:
+    layout: Literal[
+        "TITLE_AND_BODY", "TITLE", "SECTION_HEADER", "TITLE_ONLY",
+        "TITLE_AND_TWO_COLUMNS", "ONE_COLUMN_TEXT", "MAIN_POINT",
+        "BIG_NUMBER", "CAPTION_ONLY", "BLANK",
+    ] = Field("TITLE_AND_BODY", description="""Slide layout:
   "TITLE_AND_BODY"        -> Standard content slide with title + body text/bullets (DEFAULT)
   "TITLE"                 -> Cover/opening slide (centered title + subtitle)
   "SECTION_HEADER"        -> Section divider between topics (title + subtitle)
@@ -1143,6 +1326,10 @@ Not available for TITLE_ONLY and MAIN_POINT layouts."""),
     """
     logger.info(f"[add_slide] Invoked. Email: '{user_google_email}', Layout: '{layout}'")
 
+    valid_layouts = list(LAYOUT_PLACEHOLDERS.keys())
+    if layout not in valid_layouts:
+        return error_response(400, f"Invalid layout '{layout}'. Valid options: {', '.join(valid_layouts)}")
+
     info = await _add_single_slide(
         service, presentation_id,
         title=title, body=body, speaker_notes=speaker_notes,
@@ -1163,10 +1350,10 @@ async def update_slide_content(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
-    slide_id: str = Field(..., description="The slide ID to update. NEVER guess or hardcode (e.g. 'p' is wrong). Get the actual ID from: create_presentation response (slides_created[].slide_id), get_presentation response (slides[].slide_id), or add_slide response (slide_id)."),
-    title: str = Field(None, description="New title text. PLAIN TEXT ONLY. Replaces existing title. Pass None to leave unchanged."),
-    body: str = Field(None, description="New body text. PLAIN TEXT ONLY. Use \\n for new lines, \\t for indent. Replaces existing body. Pass None to leave unchanged."),
-    speaker_notes: str = Field(None, description="New speaker notes. PLAIN TEXT ONLY. Replaces existing notes. Pass None to leave unchanged."),
+    slide_id: str = Field(..., description="The slide ID to update. NEVER guess — always get from API responses. Get from: create_presentation (slides_created[].slide_id), get_presentation (slides[].slide_id), or add_slide (slide_id). slide_id is NOT element_id — element_id starts with img_/shape_/line_/tbl_/vid_."),
+    title: str = Field(None, description="New title text. PLAIN TEXT ONLY — no markdown (**, *, #, -, •). Markdown renders as literal characters on slides. Replaces existing title. Pass None to leave unchanged. WRONG: '**Bold Title**' shows literal asterisks. For bold/color/font styling, use format_slide_text after updating text."),
+    body: str = Field(None, description="New body text. PLAIN TEXT ONLY — no markdown (**, *, #, -, •). Markdown renders as literal characters on slides. Use \\n for new lines, \\t for indent levels. Replaces existing body. Pass None to leave unchanged. WRONG: '**Bold**' shows literal asterisks. '- Item' shows literal dashes. '# Heading' shows literal hash. For bullet lists, set bullets=True. For bold/color/font styling, use format_slide_text after updating text."),
+    speaker_notes: str = Field(None, description="New speaker notes. PLAIN TEXT ONLY — no markdown (**, *, #, -, •). Markdown renders as literal characters. Use \\n for new lines. Replaces existing notes. Pass None to leave unchanged."),
     bullets: bool = Field(False, description="If True, auto-formats body text as bullet list after replacing."),
 ) -> str:
     """
@@ -1174,6 +1361,7 @@ async def update_slide_content(
 
     USE THIS to update text on slides that already exist.
     Use add_slide to create new slides instead.
+    To update ONLY speaker notes without changing slide content, pass title=None and body=None.
 
     MANDATORY VISUAL VERIFICATION (inspect → change → verify):
     AFTER: You MUST call get_page_thumbnail(slide_id=...) to verify layout and text rendering.
@@ -1278,7 +1466,7 @@ async def replace_all_text(
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
     find_text: str = Field(..., description="The text to search for across all slides."),
-    replace_text: str = Field(..., description="The replacement text. PLAIN TEXT ONLY."),
+    replace_text: str = Field(..., description="The replacement text. PLAIN TEXT ONLY — no markdown (**, *, #, -, •). Markdown renders as literal characters on slides. Use \\n for line breaks."),
     match_case: bool = Field(True, description="If True (default), search is case-sensitive."),
 ) -> str:
     """
@@ -1329,7 +1517,7 @@ async def delete_slide(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
-    slide_id: str = Field(..., description="The slide ID to delete. NEVER guess or hardcode (e.g. 'p' is wrong). Get the actual ID from: create_presentation response (slides_created[].slide_id) or get_presentation response (slides[].slide_id)."),
+    slide_id: str = Field(..., description="The slide ID to delete. NEVER guess — always get from API responses. Get from: create_presentation (slides_created[].slide_id) or get_presentation (slides[].slide_id). slide_id is NOT element_id — element_id starts with img_/shape_/line_/tbl_/vid_."),
 ) -> str:
     """
     Delete a slide from the presentation.
@@ -1358,7 +1546,7 @@ async def duplicate_slide(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
-    slide_id: str = Field(..., description="The slide ID to duplicate. NEVER guess or hardcode (e.g. 'p' is wrong). Get the actual ID from: create_presentation response (slides_created[].slide_id) or get_presentation response (slides[].slide_id)."),
+    slide_id: str = Field(..., description="The slide ID to duplicate. NEVER guess — always get from API responses. Get from: create_presentation (slides_created[].slide_id) or get_presentation (slides[].slide_id). slide_id is NOT element_id — element_id starts with img_/shape_/line_/tbl_/vid_."),
 ) -> str:
     """
     Create an exact copy of a slide with all content and formatting preserved.
@@ -1436,8 +1624,18 @@ async def add_slide_image(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
-    slide_id: str = Field(..., description="The slide ID to add the image to. NEVER guess or hardcode (e.g. 'p' is wrong). Get the actual ID from: create_presentation response (slides_created[].slide_id), get_presentation response (slides[].slide_id), or add_slide response (slide_id)."),
-    image_url: str = Field(..., description="Public HTTPS URL of the image. Google's servers fetch this URL server-side, so it must be a direct link to an image file (PNG, JPEG, GIF) that is publicly accessible without authentication, redirects, or bot protection. Many websites block server-side fetches. If no reliable image URL is available, ask the user to provide one or upload the image to a publicly accessible location first."),
+    slide_id: str = Field(..., description="The slide ID to add the image to. NEVER guess — always get from API responses. Get from: create_presentation (slides_created[].slide_id), get_presentation (slides[].slide_id), or add_slide (slide_id). slide_id is NOT element_id — element_id starts with img_/shape_/line_/tbl_/vid_."),
+    image_url: str = Field(..., description="""Public HTTPS URL of a PNG, JPEG, or GIF image. Google's servers fetch this URL server-side.
+
+SUPPORTED FORMATS: PNG, JPEG, GIF only. WebP, SVG, BMP, and TIFF are NOT supported and will fail.
+REQUIREMENTS: The URL must be a direct link to an image file that is publicly accessible without authentication, redirects, or bot protection. Many CDNs (Medium, Miro, Notion) block Google's server-side fetches.
+
+COMMON FAILURE: URLs containing 'format:webp' or ending in '.webp' will ALWAYS fail — Google Slides does not support WebP.
+
+IF THIS TOOL FAILS, recover by:
+  1. Try a different URL that serves PNG/JPEG/GIF format (many CDNs support format params, e.g. change 'format:webp' to 'format:png')
+  2. Use create_drive_file(fileUrl=...) to download and re-host the image on Google Drive, then use the Drive sharing URL
+  3. Ask the user to provide a direct PNG/JPEG/GIF URL"""),
     x: float = Field(100, description="X position in points from left edge. Standard slide is 720pt wide."),
     y: float = Field(100, description="Y position in points from top edge. Standard slide is 405pt tall."),
     width: float = Field(300, description="Width in points."),
@@ -1465,14 +1663,35 @@ async def add_slide_image(
     """
     logger.info(f"[add_slide_image] Invoked. Email: '{user_google_email}', Slide: '{slide_id}'")
 
-    element_id = uuid.uuid4().hex
-    result = await _batch_update(service, presentation_id, [{
-        "createImage": {
-            "objectId": element_id,
-            "url": image_url,
-            "elementProperties": _element_properties(slide_id, x, y, width, height),
-        }
-    }])
+    element_id = f"img_{uuid.uuid4().hex[:24]}"
+    try:
+        await _batch_update(service, presentation_id, [{
+            "createImage": {
+                "objectId": element_id,
+                "url": image_url,
+                "elementProperties": _element_properties(slide_id, x, y, width, height),
+            }
+        }])
+    except HttpError as e:
+        error_msg = str(e)
+        if "problem retrieving the image" in error_msg.lower() or "invalid requests[0].createimage" in error_msg.lower():
+            # Detect likely WebP format from URL
+            is_webp = "webp" in image_url.lower()
+            format_hint = (
+                " The URL serves WebP format which Google Slides does NOT support."
+                if is_webp else ""
+            )
+            return error_response(400,
+                f"Google's servers could not fetch or process this image URL.{format_hint} "
+                f"Supported formats: PNG, JPEG, GIF only (NOT WebP, SVG, BMP). "
+                f"To fix: (1) Try changing the URL to serve PNG/JPEG format "
+                f"(e.g. replace 'format:webp' with 'format:png' in the URL), "
+                f"(2) Use create_drive_file(fileUrl=..., file_name='image.png') to re-host "
+                f"the image on Google Drive and use the Drive sharing URL, or "
+                f"(3) Ask the user for a direct PNG/JPEG/GIF URL. "
+                f"Original URL: {image_url}"
+            )
+        raise  # Re-raise non-image-fetch errors for @handle_http_errors
 
     logger.info(f"Image added successfully for {user_google_email}")
     return success_response({
@@ -1489,25 +1708,31 @@ async def add_slide_shape(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
-    slide_id: str = Field(..., description="The slide ID to add the shape to. NEVER guess or hardcode (e.g. 'p' is wrong). Get the actual ID from: create_presentation response (slides_created[].slide_id), get_presentation response (slides[].slide_id), or add_slide response (slide_id)."),
-    shape_type: str = Field("TEXT_BOX", description="""Shape type to create. Options with professional use cases:
-  "TEXT_BOX"        -> Custom text anywhere: labels, callouts, footnotes (DEFAULT)
-  "RECTANGLE"       -> Card backgrounds, badges, color blocks
-  "ROUND_RECTANGLE" -> Buttons, tags, modern cards
-  "ELLIPSE"         -> KPI circles, avatars, decorative elements
-  "TRIANGLE"        -> Warning indicators, decorative
-  "DIAMOND"         -> Decision nodes in flowcharts
-  "HEXAGON"         -> Tech/API labels, honeycomb layouts
-  "CHEVRON"         -> Process flow steps (Acquire -> Onboard -> Retain)
-  "RIGHT_ARROW"     -> Flow direction, next step
-  "LEFT_ARROW"      -> Back/previous direction
-  "UP_ARROW"        -> Growth indicator
-  "DOWN_ARROW"      -> Decline indicator, funnel
-  "STAR_5"          -> Ratings, highlights
-  "STAR_10"         -> Decorative star
-  "HEART"           -> Customer love metrics
-  "CLOUD"           -> Cloud architecture diagrams"""),
-    text: str = Field(None, description="Text inside the shape. PLAIN TEXT ONLY — no markdown. Use \\n for multiple lines. Example: 'Total Revenue\\n$4.2M'. After creation, use format_slide_text to style (bold, color, size) and update_shape_properties for fill/outline."),
+    slide_id: str = Field(..., description="The slide ID to add the shape to. NEVER guess — always get from API responses. Get from: create_presentation (slides_created[].slide_id), get_presentation (slides[].slide_id), or add_slide (slide_id). slide_id is NOT element_id — element_id starts with img_/shape_/line_/tbl_/vid_."),
+    shape_type: Literal[
+        "TEXT_BOX", "RECTANGLE", "ROUND_RECTANGLE", "ELLIPSE",
+        "TRIANGLE", "DIAMOND", "HEXAGON", "CHEVRON",
+        "RIGHT_ARROW", "LEFT_ARROW", "UP_ARROW", "DOWN_ARROW",
+        "STAR_5", "STAR_10", "HEART", "CLOUD",
+    ] = Field("TEXT_BOX", description="""MUST be one of these EXACT values — do NOT invent or modify names:
+
+  TEXT_BOX        -> labels, callouts, footnotes (DEFAULT)
+  RECTANGLE       -> cards, badges, color blocks
+  ROUND_RECTANGLE -> buttons, tags, modern cards
+  ELLIPSE         -> KPI circles, avatars
+  TRIANGLE        -> warning indicators
+  DIAMOND         -> decision nodes in flowcharts
+  HEXAGON         -> tech/API labels, honeycomb
+  CHEVRON         -> process flow steps
+  RIGHT_ARROW     -> flow direction, next step
+  LEFT_ARROW      -> back/previous direction
+  UP_ARROW        -> growth indicator
+  DOWN_ARROW      -> decline indicator, funnel
+  STAR_5          -> ratings, highlights
+  STAR_10         -> decorative star
+  HEART           -> customer love metrics
+  CLOUD           -> cloud architecture diagrams"""),
+    text: str = Field(None, description="Text inside the shape. PLAIN TEXT ONLY — no markdown (**, *, #, -, •). Markdown renders as literal characters on shapes. Use \\n for multiple lines. Example: 'Total Revenue\\n$4.2M'. WRONG: '**Bold**' shows literal asterisks. After creation, use format_slide_text to style (bold, color, size) and update_shape_properties for fill/outline."),
     x: float = Field(100, description="X position in points from left edge (0-720)."),
     y: float = Field(100, description="Y position in points from top edge (0-405)."),
     width: float = Field(200, description="Width in points."),
@@ -1531,7 +1756,7 @@ async def add_slide_shape(
     logger.info(f"[add_slide_shape] Invoked. Email: '{user_google_email}', Shape: '{shape_type}'")
 
     text = _clean_text(text)
-    element_id = uuid.uuid4().hex
+    element_id = f"shape_{uuid.uuid4().hex[:24]}"
     requests = [{
         "createShape": {
             "objectId": element_id,
@@ -1567,12 +1792,12 @@ async def add_slide_line(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
-    slide_id: str = Field(..., description="The slide ID to add the line to. NEVER guess or hardcode (e.g. 'p' is wrong). Get the actual ID from: create_presentation response (slides_created[].slide_id), get_presentation response (slides[].slide_id), or add_slide response (slide_id)."),
-    line_category: str = Field("STRAIGHT", description="Line type: 'STRAIGHT' (default), 'BENT' (right-angle connector), 'CURVED' (curved connector)."),
-    x: float = Field(100, description="Start X position in points."),
-    y: float = Field(200, description="Start Y position in points."),
-    width: float = Field(500, description="Horizontal extent in points. Must be >= 0 (use 0 for vertical line). To draw a line going left, set x to the right endpoint and use positive width going right instead."),
-    height: float = Field(0, description="Vertical extent in points. Must be >= 0 (use 0 for horizontal line). To draw a line going up, set y to the top endpoint and use positive height going down instead."),
+    slide_id: str = Field(..., description="The slide ID to add the line to. NEVER guess — always get from API responses. Get from: create_presentation (slides_created[].slide_id), get_presentation (slides[].slide_id), or add_slide (slide_id). slide_id is NOT element_id — element_id starts with img_/shape_/line_/tbl_/vid_."),
+    line_category: Literal["STRAIGHT", "BENT", "CURVED"] = Field("STRAIGHT", description="Line type: 'STRAIGHT' (default), 'BENT' (right-angle connector), 'CURVED' (curved connector)."),
+    x: float = Field(100, description="Start X position in points (standard slide: 720pt wide)."),
+    y: float = Field(200, description="Start Y position in points (standard slide: 405pt tall)."),
+    width: float = Field(500, description="Horizontal extent in points. For STRAIGHT lines: use 0 for vertical line. For BENT/CURVED connectors: MUST be > 0 (both width and height are required to define the bend path)."),
+    height: float = Field(0, description="Vertical extent in points. For STRAIGHT lines: use 0 for horizontal line. For BENT/CURVED connectors: MUST be > 0 (both width and height are required to define the bend path)."),
 ) -> str:
     """
     Add a line or connector to a slide.
@@ -1581,6 +1806,7 @@ async def add_slide_line(
     - Horizontal divider: x=60, y=200, width=600, height=0
     - Vertical separator: x=360, y=50, width=0, height=300
     - Diagonal line:      x=100, y=100, width=500, height=200
+    - Bent connector:     x=100, y=100, width=200, height=150 (BENT/CURVED need both width AND height > 0)
 
     MANDATORY VISUAL VERIFICATION:
     AFTER: You MUST call get_page_thumbnail(slide_id=...) on affected slides to verify the result visually.
@@ -1598,7 +1824,14 @@ async def add_slide_line(
         y = y + height
         height = abs(height)
 
-    element_id = uuid.uuid4().hex
+    # BENT/CURVED connectors require both width and height > 0
+    if line_category in ("BENT", "CURVED"):
+        if width == 0:
+            width = max(1, height)
+        if height == 0:
+            height = max(1, width)
+
+    element_id = f"line_{uuid.uuid4().hex[:24]}"
     await _batch_update(service, presentation_id, [{
         "createLine": {
             "objectId": element_id,
@@ -1623,7 +1856,7 @@ async def add_slide_table(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
-    slide_id: str = Field(..., description="The slide ID to add the table to. NEVER guess or hardcode (e.g. 'p' is wrong). Get the actual ID from: create_presentation response (slides_created[].slide_id), get_presentation response (slides[].slide_id), or add_slide response (slide_id)."),
+    slide_id: str = Field(..., description="The slide ID to add the table to. NEVER guess — always get from API responses. Get from: create_presentation (slides_created[].slide_id), get_presentation (slides[].slide_id), or add_slide (slide_id). slide_id is NOT element_id — element_id starts with img_/shape_/line_/tbl_/vid_."),
     rows: int = Field(..., description="Number of rows (including header row). Minimum 1."),
     columns: int = Field(..., description="Number of columns. Minimum 1."),
     data: Optional[List[List[str]]] = Field(None, description="""Optional 2D array of cell values. First row is typically the header.
@@ -1650,8 +1883,8 @@ EXAMPLE — Timeline:
    ["Launch", "Jul", "Planned"]]
 
 If None, creates an empty table to fill manually."""),
-    x: float = Field(60, description="X position in points from left edge."),
-    y: float = Field(100, description="Y position in points from top edge."),
+    x: float = Field(60, description="X position in points from left edge (standard slide: 720pt wide)."),
+    y: float = Field(100, description="Y position in points from top edge (standard slide: 405pt tall)."),
     width: float = Field(600, description="Width in points. 600pt is a good default for a full-width table below a title."),
     height: float = Field(250, description="Height in points."),
 ) -> str:
@@ -1677,7 +1910,7 @@ If None, creates an empty table to fill manually."""),
     """
     logger.info(f"[add_slide_table] Invoked. Email: '{user_google_email}', {rows}x{columns}")
 
-    element_id = uuid.uuid4().hex
+    element_id = f"tbl_{uuid.uuid4().hex[:24]}"
     requests = [{
         "createTable": {
             "objectId": element_id,
@@ -1726,10 +1959,10 @@ async def add_slide_video(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
-    slide_id: str = Field(..., description="The slide ID to add the video to. NEVER guess or hardcode (e.g. 'p' is wrong). Get the actual ID from: create_presentation response (slides_created[].slide_id), get_presentation response (slides[].slide_id), or add_slide response (slide_id)."),
+    slide_id: str = Field(..., description="The slide ID to add the video to. NEVER guess — always get from API responses. Get from: create_presentation (slides_created[].slide_id), get_presentation (slides[].slide_id), or add_slide (slide_id). slide_id is NOT element_id — element_id starts with img_/shape_/line_/tbl_/vid_."),
     video_id: str = Field(..., description="YouTube video ID ONLY (not the full URL). Example: 'dQw4w9WgXcQ' from https://youtube.com/watch?v=dQw4w9WgXcQ"),
-    x: float = Field(160, description="X position in points."),
-    y: float = Field(90, description="Y position in points."),
+    x: float = Field(160, description="X position in points (standard slide: 720pt wide)."),
+    y: float = Field(90, description="Y position in points (standard slide: 405pt tall)."),
     width: float = Field(400, description="Width in points. 400pt is good for centered 16:9 video."),
     height: float = Field(225, description="Height in points. 225pt matches 16:9 aspect ratio with 400pt width."),
 ) -> str:
@@ -1758,7 +1991,7 @@ async def add_slide_video(
             video_id = match.group(1)
             logger.info(f"Extracted video ID from URL: {video_id}")
 
-    element_id = uuid.uuid4().hex
+    element_id = f"vid_{uuid.uuid4().hex[:24]}"
     await _batch_update(service, presentation_id, [{
         "createVideo": {
             "objectId": element_id,
@@ -1804,9 +2037,9 @@ async def format_slide_text(
   Blue:  "#1A73E8"    Red: "#EA4335"      Green: "#34A853"
   Orange: "#FB8C00"   Purple: "#7C3AED" """),
     link_url: str = Field(None, description="URL to hyperlink the text to. Example: 'https://example.com'. Set to empty string '' to remove link."),
-    alignment: str = Field(None, description="Paragraph alignment: 'START' (left), 'CENTER', 'END' (right), 'JUSTIFIED'."),
-    start_index: int = Field(None, description="Start character index for partial formatting (0-based). Omit to format ALL text in the element."),
-    end_index: int = Field(None, description="End character index for partial formatting (exclusive). Omit to format ALL text. Example: to bold '$4.2M' at the start, use start_index=0, end_index=5. If end_index exceeds text length, it will be automatically clamped."),
+    alignment: Optional[Literal["START", "CENTER", "END", "JUSTIFIED"]] = Field(None, description="Paragraph alignment: 'START' (left), 'CENTER', 'END' (right), 'JUSTIFIED'."),
+    start_index: int = Field(None, description="Start character index for partial formatting (0-based). To format ALL text, omit both start_index and end_index (do NOT pass 0, 0)."),
+    end_index: int = Field(None, description="End character index for partial formatting (exclusive). Must be > start_index. To format ALL text, omit both indices. Example: to bold '$4.2M' at the start, use start_index=0, end_index=5. If end_index exceeds text length, it will be automatically clamped."),
 ) -> str:
     """
     Apply text formatting (bold, color, font, size, links, alignment) to text in any element.
@@ -1843,7 +2076,7 @@ async def format_slide_text(
     formatting_applied = []
 
     # Text range
-    if start_index is not None and end_index is not None:
+    if start_index is not None and end_index is not None and start_index < end_index:
         # Clamp end_index to actual text length to prevent API errors
         pres_data = await asyncio.to_thread(
             service.presentations().get(
@@ -1862,6 +2095,7 @@ async def format_slide_text(
 
         text_range = {"type": "FIXED_RANGE", "startIndex": start_index, "endIndex": end_index}
     else:
+        # Invalid range (e.g., 0,0) or indices omitted — format all text
         text_range = {"type": "ALL"}
 
     # Text style
@@ -1934,7 +2168,7 @@ async def set_slide_background(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
-    slide_id: str = Field(..., description="The slide ID to set the background for. NEVER guess or hardcode (e.g. 'p' is wrong). Get the actual ID from: create_presentation response (slides_created[].slide_id), get_presentation response (slides[].slide_id), or add_slide response (slide_id)."),
+    slide_id: str = Field(..., description="The slide ID to set the background for. NEVER guess — always get from API responses. Get from: create_presentation (slides_created[].slide_id), get_presentation (slides[].slide_id), or add_slide (slide_id). slide_id is NOT element_id — element_id starts with img_/shape_/line_/tbl_/vid_."),
     color: str = Field(None, description="""Background color as hex "#RRGGBB". Provide color OR image_url, not both.
 Professional colors:
   Dark:   "#1E1E2E", "#2D2D3F", "#0F172A", "#1A1A2E"
@@ -2289,7 +2523,7 @@ async def set_element_z_order(
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
     element_id: str = Field(..., description="The element ID to reorder. Get from add_slide_shape/image/line/table/video response (element_id) or get_page response (elements[].id)."),
-    operation: str = Field("BRING_TO_FRONT", description="Z-order operation: 'BRING_TO_FRONT' (default, topmost), 'BRING_FORWARD' (one step up), 'SEND_BACKWARD' (one step down), 'SEND_TO_BACK' (bottommost)."),
+    operation: Literal["BRING_TO_FRONT", "BRING_FORWARD", "SEND_BACKWARD", "SEND_TO_BACK"] = Field("BRING_TO_FRONT", description="Z-order operation: 'BRING_TO_FRONT' (default, topmost), 'BRING_FORWARD' (one step up), 'SEND_BACKWARD' (one step down), 'SEND_TO_BACK' (bottommost)."),
 ) -> str:
     """
     Change the stacking order (z-order) of an element on a slide.
