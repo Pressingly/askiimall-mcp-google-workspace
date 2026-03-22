@@ -791,6 +791,10 @@ async def batch_update_presentation(
        RIGHT: "contentAlignment" goes at the "tableCellProperties" level, as a SIBLING of "tableCellBackgroundFill"
     4. WRONG: Using hex colors like "#FF0000"
        RIGHT: Use float rgbColor like {"red": 1.0, "green": 0, "blue": 0}
+    5. WRONG: "pageObjectId" in updatePageProperties
+       RIGHT: "objectId" (same as all other request types)
+    6. WRONG: "properties" in updatePageProperties
+       RIGHT: "pageProperties" (the full field name)
 
     ═══ TABLE CELL STYLING ═══
 
@@ -1030,6 +1034,15 @@ async def batch_update_presentation(
         "objectId": "<element_id>",
         "title": "Chart title",
         "description": "Bar chart showing Q1 revenue by region"
+    }}
+
+    ═══ PAGE PROPERTIES ═══
+
+    # Set slide background color (use set_slide_background tool instead for single slides)
+    {"updatePageProperties": {
+        "objectId": "<slide_id>",
+        "pageProperties": {"pageBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.06, "green": 0.09, "blue": 0.16}}}}},
+        "fields": "pageBackgroundFill.solidFill.color"
     }}
 
     MANDATORY VISUAL VERIFICATION:
