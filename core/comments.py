@@ -108,25 +108,25 @@ def create_comment_tools(app_name: str, file_id_param: str):
         @require_google_service("drive", "drive_read")
         @handle_http_errors(read_func_name, service_type="drive")
         async def read_comments(service, user_google_email: str = Field(..., description="The user's Google email address."), presentation_id: str = Field(..., description="The ID of the Google Presentation to read comments from. Obtain this from the presentation's edit URL or from presentation creation results.")) -> str:
-            """Read all comments from a Google Presentation."""
+            """Read all comments from a Google Presentation. Returns JSON with comments array. Each comment has: id, content, author, created, resolved, replies[] (each with id, content, author, created), reply_count."""
             return await _read_comments_impl(service, app_name, presentation_id)
 
         @require_google_service("drive", "drive_file")
         @handle_http_errors(create_func_name, service_type="drive")
         async def create_comment(service, user_google_email: str = Field(..., description="The user's Google email address."), presentation_id: str = Field(..., description="The ID of the Google Presentation to add a comment to. Obtain this from the presentation's edit URL or from presentation creation results."), comment_content: str = Field(..., description="The text content of the comment to create.")) -> str:
-            """Create a new comment on a Google Presentation."""
+            """Create a new comment on a Google Presentation. Returns JSON with the created comment: id, content, author, created."""
             return await _create_comment_impl(service, app_name, presentation_id, comment_content)
 
         @require_google_service("drive", "drive_file")
         @handle_http_errors(reply_func_name, service_type="drive")
         async def reply_to_comment(service, user_google_email: str = Field(..., description="The user's Google email address."), presentation_id: str = Field(..., description="The ID of the Google Presentation containing the comment. Obtain this from the presentation's edit URL or from presentation creation results."), comment_id: str = Field(..., description="The ID of the comment to reply to. Obtain this from read_presentation_comments results."), reply_content: str = Field(..., description="The text content of the reply.")) -> str:
-            """Reply to a specific comment in a Google Presentation."""
+            """Reply to a specific comment in a Google Presentation. Returns JSON with the reply: id, content, author, created."""
             return await _reply_to_comment_impl(service, app_name, presentation_id, comment_id, reply_content)
 
         @require_google_service("drive", "drive_file")
         @handle_http_errors(resolve_func_name, service_type="drive")
         async def resolve_comment(service, user_google_email: str = Field(..., description="The user's Google email address."), presentation_id: str = Field(..., description="The ID of the Google Presentation containing the comment. Obtain this from the presentation's edit URL or from presentation creation results."), comment_id: str = Field(..., description="The ID of the comment to resolve. Obtain this from read_presentation_comments results.")) -> str:
-            """Resolve a comment in a Google Presentation."""
+            """Resolve a comment in a Google Presentation. Returns JSON with resolved=true, comment_id, and reply_id."""
             return await _resolve_comment_impl(service, app_name, presentation_id, comment_id)
 
     # Set the proper function names and register with server
