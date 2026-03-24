@@ -10,8 +10,8 @@ import functools
 from typing import List, Optional
 
 from googleapiclient.errors import HttpError
+from mcp.server.fastmcp.exceptions import ToolError
 from .api_enablement import get_api_enablement_message
-from .response import error_response
 from auth.google_auth import GoogleAuthenticationError
 
 logger = logging.getLogger(__name__)
@@ -305,12 +305,15 @@ def handle_http_errors(tool_name: str, is_read_only: bool = False, service_type:
                             f"LLM: Try 'start_google_auth' with the user's email and the appropriate service_name."
                         )
 
-                    logger.error(f"API error in {tool_name}: {error}", exc_info=True)
-                    return error_response(
-                        code=status_code,
-                        message=message,
-                        retryable=retryable
+                    # Log tool parameters on error for debugging (exclude internal/sensitive keys)
+                    _exclude_keys = {"service", "access_token", "token", "credentials"}
+                    safe_params = {k: v for k, v in kwargs.items() if k not in _exclude_keys}
+                    logger.error(
+                        f"API error in {tool_name}: {error}\n"
+                        f"  Tool params: {safe_params}",
+                        exc_info=True
                     )
+                    raise ToolError(message)
                 except TransientNetworkError:
                     # Re-raise without wrapping to preserve the specific error type
                     raise
@@ -318,8 +321,10 @@ def handle_http_errors(tool_name: str, is_read_only: bool = False, service_type:
                     # Re-raise authentication errors without wrapping
                     raise
                 except Exception as e:
+                    _exclude_keys = {"service", "access_token", "token", "credentials"}
+                    safe_params = {k: v for k, v in kwargs.items() if k not in _exclude_keys}
                     message = f"An unexpected error occurred in {tool_name}: {e}"
-                    logger.exception(message)
+                    logger.exception(f"{message}\n  Tool params: {safe_params}")
                     raise Exception(message) from e
 
         return wrapper
