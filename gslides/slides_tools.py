@@ -1,56 +1,8 @@
 """
 Google Slides MCP Tools
 
-This module provides MCP tools for interacting with Google Slides API.
-
-=== TEXT FORMATTING RULES (CRITICAL — READ BEFORE USING ANY TOOL) ===
-
-ALL text fields (title, body, speaker_notes) use PLAIN TEXT only.
-DO NOT use markdown syntax. Markdown will appear as literal characters on slides.
-
-FORBIDDEN (will render as ugly literal characters on slides):
-  - NO markdown: **, *, #, ##, ###, `, ```, -, [], ()
-  - NO bullet characters: bullet, dash, or asterisk prefixes
-  - NO HTML tags: <b>, <i>, <br>, <ul>, <li>
-
-CORRECT text formatting:
-  - New line:         Use \\n between lines
-  - Bullet list:      Set bullets=True, separate items with \\n (bullets are auto-added)
-  - Nested bullet:    Use \\t before the line text for indent levels
-  - Sub-sub bullet:   Use \\t\\t for deeper nesting
-  - Bold/italic:      Use format_slide_text AFTER creating the slide
-  - Colors/fonts:     Use format_slide_text AFTER creating the slide
-
-EXAMPLES of CORRECT body text:
-  Plain lines:     "Line one\\nLine two\\nLine three"
-  Bullet list:     "First point\\nSecond point\\nThird point"  (with bullets=True)
-  Nested bullets:  "Main point\\n\\tSub-point A\\n\\tSub-point B\\nAnother main point"  (with bullets=True)
-  Two-level nest:  "Topic\\n\\tDetail\\n\\t\\tSub-detail"  (with bullets=True)
-
-EXAMPLES of WRONG body text (DO NOT DO THIS):
-  "**Bold text**"           -> shows literal asterisks on slide
-  "- First item\\n- Second"  -> shows literal dashes on slide
-  "# Heading"               -> shows literal hash on slide
-  "[link](url)"             -> shows literal brackets on slide
-
-=== SLIDE DIMENSIONS ===
-Standard 16:9 slide = 720pt wide x 405pt tall
-Coordinate system: (0,0) = top-left corner
-
-=== MANDATORY THUMBNAIL WORKFLOW FOR STYLING (CRITICAL) ===
-
-EVERY styling or visual change MUST follow the inspect-change-verify cycle:
-  1. BEFORE: call get_page_thumbnail(slide_id=...) to inspect current state
-  2. APPLY the styling change
-  3. AFTER: call get_page_thumbnail(slide_id=...) again to verify the result
-
-This is NOT optional. Skipping thumbnails leads to blind styling — misaligned text,
-clashing colors, or broken layouts. You MUST visually confirm every styling decision.
-
-Tools that REQUIRE this workflow:
-  - format_slide_text, set_slide_background, update_shape_properties
-  - add_slide_shape, add_slide_image, add_slide_table, add_slide_line
-  - transform_element, batch_update_presentation
+Provides MCP tools for creating and editing Google Slides presentations.
+Standard slide: 720pt wide × 405pt tall. Origin (0,0) = top-left.
 """
 
 import html
@@ -71,7 +23,8 @@ from googleapiclient.errors import HttpError
 from auth.service_decorator import require_google_service
 from core.server import server
 from core.utils import handle_http_errors
-from core.response import success_response, error_response
+from mcp.server.fastmcp.exceptions import ToolError
+from core.response import success_response
 from core.comments import create_comment_tools
 
 logger = logging.getLogger(__name__)
@@ -597,29 +550,11 @@ FULL PROFESSIONAL DECK EXAMPLE:
     """
     Create a new Google Slides presentation with an auto-filled cover slide and optional additional slides.
 
-    The first slide is automatically populated with the presentation title as heading and optional subtitle.
+    The first slide is automatically populated with the title and optional subtitle.
     Pass the 'slides' parameter to build an entire deck in one call.
 
-    WORKFLOW FOR A PROFESSIONAL PRESENTATION:
-    Option A (one call): create_presentation(title=..., subtitle=..., slides=[...]) builds the full deck.
-    Option B (step by step):
-      Step 1: create_presentation(title=..., subtitle=...) -> get presentation_id
-      Step 2: add_slide(...) for each additional slide
-      Step 3: add_slide_image/add_slide_table/add_slide_shape for visuals
-      Step 4: format_slide_text for styling (bold, color, font)
-      Step 5: set_slide_background for slide backgrounds
-      Step 6: update_shape_properties for shape fills/outlines
-
-    NOTE: Each slide requires 3-4 API calls. For large decks (20+ slides), Google rate limits
-    (300 requests/minute) may apply. Consider creating in batches if needed.
-
-    MANDATORY — THUMBNAIL VERIFICATION FOR STYLING:
-    After creating the presentation, you MUST call get_page_thumbnail(slide_id=...)
-    on each slide BEFORE applying any styling changes. Do NOT style blindly.
-    Follow the inspect → change → verify cycle for every styling tool call.
-
     Returns:
-        str: JSON with presentation id, title, link, slide_count, and slides_created details.
+        JSON with presentation_id, title, link, slide_count, and slides_created details.
     """
     logger.info(f"[create_presentation] Invoked. Email: '{user_google_email}', Title: '{title}'")
 
@@ -704,26 +639,13 @@ async def get_presentation(
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL: https://docs.google.com/presentation/d/{presentation_id}/edit. Use the FULL ID."),
 ) -> str:
     """
-    Get details about a Google Slides presentation including slide list with content.
+    Get presentation metadata and slide list with content summaries.
 
-    USE THIS FOR:
-    - Getting the list of slide IDs, titles, and content in a presentation
-    - Finding a specific slide's ID before updating or reading its content
-    - Checking how many slides exist
-
-    NEXT STEP — GET ELEMENT IDs:
-    This tool returns slide-level data (slide_id, title, body, element_count) but NOT individual
-    element IDs. To get element IDs for styling (needed by format_slide_text, update_shape_properties,
-    transform_element), call get_page(slide_id=...) on the specific slide.
-
-    VISUAL INSPECTION WORKFLOW (MANDATORY before styling):
-    To visually inspect or improve slides, use this tool first to get slide IDs,
-    then you MUST call get_page_thumbnail(slide_id=...) for each slide BEFORE making
-    any styling changes. Work on one slide at a time: inspect → change → verify with thumbnail.
+    Returns slide-level data (slide_id, title, body, element_count) but NOT individual
+    element IDs. Use get_page(slide_id=...) to get element IDs for a specific slide.
 
     Returns:
-        str: JSON with presentation metadata and slides array.
-             Each slide has: index, slide_id, title, body, subtitle, element_count.
+        JSON with presentation metadata and slides array.
     """
     logger.info(f"[get_presentation] Invoked. Email: '{user_google_email}', ID: '{presentation_id}'")
 
@@ -763,16 +685,8 @@ async def batch_update_presentation(
     requests: List[Dict[str, Any]] = Field(..., description="List of Google Slides API batchUpdate request objects. Each dict must have exactly ONE request type key. Colors: rgbColor with float 0.0-1.0 (NOT hex). Table ranges need location + rowSpan + columnSpan. See docstring for all supported request types with copy-paste examples. PREFER high-level tools when available."),
 ) -> str:
     """
-    Apply raw batch updates to a Google Slides presentation.
-
-    USE THIS FOR operations not covered by high-level tools:
-    - Table cell styling (background, borders, padding, row height, column width)
-    - Table structure (merge/unmerge cells, insert/delete rows/columns)
-    - Update text in existing table cells
-    - Bullet points (create/delete)
-    - Image/video/line property updates
-    - Replace shapes with images or Sheets charts
-    - Accessibility alt text
+    Apply raw batch updates to a Google Slides presentation for operations
+    not covered by high-level tools (table styling, bullets, line/image properties, etc.).
 
     FORMAT RULES:
     - Colors: rgbColor with FLOAT 0.0-1.0 (NOT hex, NOT 0-255)
@@ -1045,20 +959,17 @@ async def batch_update_presentation(
         "fields": "pageBackgroundFill.solidFill.color"
     }}
 
-    MANDATORY VISUAL VERIFICATION:
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) on affected slides to verify.
-
     Returns:
-        str: JSON with requests_applied count and reply details.
+        JSON with requests_applied count and reply details.
     """
     logger.info(f"[batch_update_presentation] Invoked. Email: '{user_google_email}', ID: '{presentation_id}', Requests: {len(requests)}")
 
     # Basic validation
     if not requests:
-        return error_response(400, "requests list is empty — nothing to update")
+        raise ToolError("requests list is empty — nothing to update")
     for i, req in enumerate(requests):
         if not isinstance(req, dict) or len(req) == 0:
-            return error_response(400, f"Request at index {i} must be a non-empty dict with one request type key (e.g. 'updateTableCellProperties')")
+            raise ToolError(f"Request at index {i} must be a non-empty dict with one request type key (e.g. 'updateTableCellProperties')")
 
     result = await _batch_update(service, presentation_id, requests)
 
@@ -1095,30 +1006,9 @@ async def get_page(
     """
     Get full details about a specific slide: elements, text, formatting, positions, and styles.
 
-    USE THIS FOR:
-    - Finding element IDs on a slide (shapes, images, tables, etc.)
-    - Reading text content and formatting (font, size, color, bold, italic)
-    - Getting text_length for format_slide_text start_index/end_index
-    - Understanding element positions (x, y, width, height in points)
-    - Checking fill/outline colors and slide background
-
-    VISUAL INSPECTION WORKFLOW (MANDATORY before styling):
-    To visually inspect slides, use get_page_thumbnail(slide_id=...) BEFORE making
-    any styling changes. Work on one slide at a time: inspect → change → verify.
-
     Returns:
-        str: JSON with slide metadata, elements array, background, and text content.
-             All elements have: id, type, position {x, y, width, height in pt}.
-             shape: shape_type, placeholder_type, text, text_length, text_runs[], fill_color, outline_color.
-             table: rows, columns, cell_data[][] (2D text array).
-             line: line_type, line_category, weight_pt, dash_style, color.
-             image: content_url, source_url.
-             video: video_source, video_id, video_url.
-             sheets_chart: spreadsheet_id, chart_id, content_url.
-             word_art: rendered_text.
-             group: children[] (recursive element array).
-             Content: title, body, subtitle, speaker_notes (each null if empty).
-             Background: color, image_url.
+        JSON with slide metadata, elements array (id, type, position, text, formatting),
+        background, and content (title, body, subtitle, speaker_notes).
     """
     logger.info(f"[get_page] Invoked. Email: '{user_google_email}', Presentation: '{presentation_id}', Slide: '{slide_id}'")
 
@@ -1188,21 +1078,13 @@ async def get_page_thumbnail(
   'SMALL'  (default) — ~220px wide, ~15-25KB, low token cost. Best for routine inspect→change→verify steps.
   'MEDIUM' — ~800px wide, ~80-150KB, moderate token cost. Use when you need to read small text or check fine details.
   'LARGE'  — ~1600px wide, ~350-800KB, high token cost. Only use when you need pixel-level precision.
-  PREFER SMALL for the mandatory styling verification workflow. Only upgrade if SMALL is insufficient."""),
+  PREFER SMALL to minimize token usage. Only upgrade if SMALL is insufficient."""),
 ):
     """
-    Generate a thumbnail for a specific slide and return it inline for visual inspection.
-
-    USE THIS FOR:
-    - Getting a visual preview of a slide
-    - Verifying slide content visually before and after styling changes
-
-    The thumbnail image is returned inline as an image alongside JSON metadata.
-    Use SMALL size (default) for routine verification to minimize token usage.
+    Generate a thumbnail image for a specific slide, returned inline for visual inspection.
 
     Returns:
-        JSON metadata with thumbnail_url, plus the thumbnail image rendered inline
-        for direct visual inspection.
+        JSON metadata with thumbnail_url, plus the thumbnail image rendered inline.
     """
     logger.info(f"[get_page_thumbnail] Invoked. Email: '{user_google_email}', Presentation: '{presentation_id}', Slide: '{slide_id}', Size: '{thumbnail_size}'")
 
@@ -1298,50 +1180,14 @@ Not available for TITLE_ONLY and MAIN_POINT layouts."""),
     """
     Create a new slide with title, body content, speaker notes, and optional bullet formatting.
 
-    MANDATORY VISUAL VERIFICATION (inspect → change → verify):
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) to verify layout and content.
-    If styling improvements are needed, you MUST call get_page_thumbnail first, then style, then verify again.
-
-    FULL PROFESSIONAL EXAMPLES:
-
-    # Cover slide
-    add_slide(layout="TITLE", title="Q1 2026 Business Review", body="Prepared by Strategy Team")
-
-    # Content slide with bullets
-    add_slide(
-        title="Key Achievements",
-        body="Revenue grew 34% YoY\\nAcquired 12 enterprise clients\\nExpanded to 3 APAC markets\\nNPS reached 72",
-        bullets=True,
-        speaker_notes="Open with revenue headline. Pause for emphasis."
-    )
-
-    # KPI stat slide
-    add_slide(layout="BIG_NUMBER", title="$4.2M", body="Annual Recurring Revenue")
-
-    # Section divider
-    add_slide(layout="SECTION_HEADER", title="Market Analysis", body="Understanding our competitive landscape")
-
-    # Nested bullets
-    add_slide(
-        title="Product Roadmap",
-        body="Q1 Deliverables\\n\\tCheckout redesign\\n\\tMobile app v2.0\\nQ2 Deliverables\\n\\tAI recommendations\\n\\tPartner API launch",
-        bullets=True
-    )
-
-    # Testimonial / key takeaway
-    add_slide(layout="MAIN_POINT", title="We exceeded every target this quarter.")
-
-    # Quote slide
-    add_slide(layout="CAPTION_ONLY", body="Innovation distinguishes between a leader and a follower. — Steve Jobs")
-
     Returns:
-        str: JSON with slide_id, placeholder_ids, layout, and presentation link.
+        JSON with slide_id, placeholder_ids, layout, and presentation link.
     """
     logger.info(f"[add_slide] Invoked. Email: '{user_google_email}', Layout: '{layout}'")
 
     valid_layouts = list(LAYOUT_PLACEHOLDERS.keys())
     if layout not in valid_layouts:
-        return error_response(400, f"Invalid layout '{layout}'. Valid options: {', '.join(valid_layouts)}")
+        raise ToolError(f"Invalid layout '{layout}'. Valid options: {', '.join(valid_layouts)}")
 
     info = await _add_single_slide(
         service, presentation_id,
@@ -1371,16 +1217,10 @@ async def update_slide_content(
 ) -> str:
     """
     Replace text content on an existing slide (title, body, and/or speaker notes).
-
-    USE THIS to update text on slides that already exist.
-    Use add_slide to create new slides instead.
-    To update ONLY speaker notes without changing slide content, pass title=None and body=None.
-
-    MANDATORY VISUAL VERIFICATION (inspect → change → verify):
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) to verify layout and text rendering.
+    Pass None for any field to leave it unchanged.
 
     Returns:
-        str: JSON with slide_id, updated_fields list, and link.
+        JSON with slide_id, updated_fields list, and link.
     """
     logger.info(f"[update_slide_content] Invoked. Email: '{user_google_email}', Slide: '{slide_id}'")
 
@@ -1485,15 +1325,8 @@ async def replace_all_text(
     """
     Find and replace text across the entire presentation (all slides).
 
-    USE THIS FOR:
-    - Updating dates, names, or numbers across all slides at once
-    - Template variable replacement (e.g., replace '{{company}}' with 'Acme Corp')
-
-    MANDATORY VISUAL VERIFICATION:
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) on affected slides to verify layout is not broken.
-
     Returns:
-        str: JSON with occurrences_replaced count.
+        JSON with occurrences_replaced count.
     """
     logger.info(f"[replace_all_text] Invoked. Email: '{user_google_email}', Find: '{find_text}'")
 
@@ -1564,15 +1397,8 @@ async def duplicate_slide(
     """
     Create an exact copy of a slide with all content and formatting preserved.
 
-    USE THIS FOR:
-    - Duplicating a template slide, then updating content for each variation
-    - Creating consistent slides with the same design
-
-    MANDATORY VISUAL VERIFICATION:
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) on affected slides to verify the result visually.
-
     Returns:
-        str: JSON with original_slide_id, new_slide_id, and link.
+        JSON with original_slide_id, new_slide_id, and link.
     """
     logger.info(f"[duplicate_slide] Invoked. Email: '{user_google_email}', Slide: '{slide_id}'")
 
@@ -1657,22 +1483,8 @@ IF THIS TOOL FAILS, recover by:
     """
     Insert an image from a URL onto a slide.
 
-    COMMON IMAGE POSITIONS (720x405pt slide):
-      Full slide background:  x=0,   y=0,   width=720, height=405
-      Center large:           x=110, y=52,  width=500, height=300
-      Center medium:          x=210, y=102, width=300, height=200
-      Right half:             x=370, y=50,  width=330, height=300
-      Left half:              x=20,  y=50,  width=330, height=300
-      Top-right logo:         x=620, y=15,  width=80,  height=40
-      Bottom-right logo:      x=620, y=360, width=80,  height=40
-      Below title full-width: x=60,  y=100, width=600, height=280
-
-    MANDATORY VISUAL VERIFICATION (inspect → change → verify):
-    BEFORE: You MUST call get_page_thumbnail(slide_id=...) to inspect current state. Do NOT skip this step.
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) again to verify the result. If it looks wrong, iterate.
-
     Returns:
-        str: JSON with element_id, slide_id, and link.
+        JSON with element_id, slide_id, and link.
     """
     logger.info(f"[add_slide_image] Invoked. Email: '{user_google_email}', Slide: '{slide_id}'")
 
@@ -1694,7 +1506,7 @@ IF THIS TOOL FAILS, recover by:
                 " The URL serves WebP format which Google Slides does NOT support."
                 if is_webp else ""
             )
-            return error_response(400,
+            raise ToolError(
                 f"Google's servers could not fetch or process this image URL.{format_hint} "
                 f"Supported formats: PNG, JPEG, GIF only (NOT WebP, SVG, BMP). "
                 f"To fix: (1) Try changing the URL to serve PNG/JPEG format "
@@ -1754,17 +1566,8 @@ async def add_slide_shape(
     """
     Add a shape or text box to a slide.
 
-    After creating a shape, you can:
-    - format_slide_text(element_id=...) to style the text inside
-    - update_shape_properties(element_id=...) to set fill color and outline
-    - transform_element(element_id=...) to reposition or resize
-
-    MANDATORY VISUAL VERIFICATION (inspect → change → verify):
-    BEFORE: You MUST call get_page_thumbnail(slide_id=...) to inspect current state. Do NOT skip this step.
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) again to verify the result. If it looks wrong, iterate.
-
     Returns:
-        str: JSON with element_id, shape_type, slide_id, and link.
+        JSON with element_id, shape_type, slide_id, and link.
     """
     logger.info(f"[add_slide_shape] Invoked. Email: '{user_google_email}', Shape: '{shape_type}'")
 
@@ -1815,17 +1618,8 @@ async def add_slide_line(
     """
     Add a line or connector to a slide.
 
-    EXAMPLES:
-    - Horizontal divider: x=60, y=200, width=600, height=0
-    - Vertical separator: x=360, y=50, width=0, height=300
-    - Diagonal line:      x=100, y=100, width=500, height=200
-    - Bent connector:     x=100, y=100, width=200, height=150 (BENT/CURVED need both width AND height > 0)
-
-    MANDATORY VISUAL VERIFICATION:
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) on affected slides to verify the result visually.
-
     Returns:
-        str: JSON with element_id, line_category, slide_id, and link.
+        JSON with element_id, line_category, slide_id, and link.
     """
     logger.info(f"[add_slide_line] Invoked. Email: '{user_google_email}', Category: '{line_category}'")
 
@@ -1904,22 +1698,11 @@ If None, creates an empty table to fill manually."""),
     """
     Create a table on a slide with optional pre-filled data.
 
-    AFTER CREATING A TABLE, style it with batch_update_presentation:
-    - Cell backgrounds: updateTableCellProperties with tableCellBackgroundFill
-    - Cell text styling: updateTextStyle with cellLocation (bold, color, font)
-    - Cell text alignment: updateParagraphStyle with cellLocation
-    - Cell borders: updateTableBorderProperties
-    - Column widths: updateTableColumnProperties
-    - Row heights: updateTableRowProperties
-    See batch_update_presentation docstring for copy-paste examples.
-
-    NOTE: format_slide_text and update_shape_properties do NOT work on table cells.
-
-    MANDATORY VISUAL VERIFICATION:
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) on affected slides to verify the result visually.
+    Style table cells with batch_update_presentation (updateTableCellProperties, updateTextStyle with cellLocation).
+    format_slide_text and update_shape_properties do NOT work on table cells.
 
     Returns:
-        str: JSON with element_id, rows, columns, slide_id, and link.
+        JSON with element_id, rows, columns, slide_id, and link.
     """
     logger.info(f"[add_slide_table] Invoked. Email: '{user_google_email}', {rows}x{columns}")
 
@@ -1982,11 +1765,8 @@ async def add_slide_video(
     """
     Embed a YouTube video on a slide. Only YouTube videos are supported.
 
-    MANDATORY VISUAL VERIFICATION:
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) on affected slides to verify the result visually.
-
     Returns:
-        str: JSON with element_id, video_id, slide_id, and link.
+        JSON with element_id, video_id, slide_id, and link.
     """
     logger.info(f"[add_slide_video] Invoked. Email: '{user_google_email}', Video: '{video_id}'")
 
@@ -2039,16 +1819,8 @@ async def format_slide_text(
     italic: bool = Field(None, description="Set True for italic, False to remove italic, None to leave unchanged."),
     underline: bool = Field(None, description="Set True for underline, False to remove, None to leave unchanged."),
     font_size: int = Field(None, description="Font size in points. Common sizes: 12 (body), 18 (subtitle), 24 (heading), 36 (large title), 48 (hero number), 72 (big number)."),
-    font_family: str = Field(None, description="""Font family name. Common options:
-  Modern:    "Montserrat", "Poppins", "Inter", "Roboto"
-  Classic:   "Georgia", "Times New Roman", "Garamond"
-  Clean:     "Arial", "Helvetica", "Open Sans", "Lato"
-  Monospace: "Roboto Mono", "Source Code Pro" """),
-    color: str = Field(None, description="""Text color as hex string "#RRGGBB". Common professional colors:
-  White: "#FFFFFF"    Black: "#000000"    Dark text: "#212121"
-  Muted: "#757575"    Light gray: "#9E9E9E"
-  Blue:  "#1A73E8"    Red: "#EA4335"      Green: "#34A853"
-  Orange: "#FB8C00"   Purple: "#7C3AED" """),
+    font_family: str = Field(None, description='Font family name (e.g. "Montserrat", "Georgia", "Arial", "Roboto Mono").'),
+    color: str = Field(None, description='Text color as hex "#RRGGBB" (e.g. "#FFFFFF", "#000000", "#1A73E8").'),
     link_url: str = Field(None, description="URL to hyperlink the text to. Example: 'https://example.com'. Set to empty string '' to remove link."),
     alignment: Optional[Literal["START", "CENTER", "END", "JUSTIFIED"]] = Field(None, description="Paragraph alignment: 'START' (left), 'CENTER', 'END' (right), 'JUSTIFIED'."),
     start_index: int = Field(None, description="Start character index for partial formatting (0-based). To format ALL text, omit both start_index and end_index (do NOT pass 0, 0)."),
@@ -2057,31 +1829,10 @@ async def format_slide_text(
     """
     Apply text formatting (bold, color, font, size, links, alignment) to text in any element.
 
-    PROFESSIONAL STYLING RECIPES:
-
-    # White title on dark background
-    format_slide_text(element_id=..., bold=True, font_size=36, font_family="Montserrat", color="#FFFFFF", alignment="CENTER")
-
-    # Brand-colored subtitle
-    format_slide_text(element_id=..., font_size=18, font_family="Open Sans", color="#6C757D")
-
-    # Hyperlinked CTA text
-    format_slide_text(element_id=..., bold=True, color="#1A73E8", link_url="https://example.com")
-
-    # Highlight specific number (e.g., "$4.2M" at start of text)
-    format_slide_text(element_id=..., bold=True, color="#E53935", font_size=48, start_index=0, end_index=5)
-
-    # Italic quote attribution
-    format_slide_text(element_id=..., italic=True, font_size=14, color="#9E9E9E")
-
-    For table cell text styling, use batch_update_presentation with updateTextStyle + cellLocation.
-
-    MANDATORY VISUAL VERIFICATION (inspect → change → verify):
-    BEFORE: You MUST call get_page_thumbnail(slide_id=...) to inspect current state. Do NOT skip this step.
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) again to verify the result. If it looks wrong, iterate.
+    For table cell text, use batch_update_presentation with updateTextStyle + cellLocation instead.
 
     Returns:
-        str: JSON with element_id, formatting_applied list, and link.
+        JSON with element_id, formatting_applied list, and link.
     """
     logger.info(f"[format_slide_text] Invoked. Email: '{user_google_email}', Element: '{element_id}'")
 
@@ -2182,23 +1933,14 @@ async def set_slide_background(
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
     slide_id: str = Field(..., description="The slide ID to set the background for. NEVER guess — always get from API responses. Get from: create_presentation (slides_created[].slide_id), get_presentation (slides[].slide_id), or add_slide (slide_id). slide_id is NOT element_id — element_id starts with img_/shape_/line_/tbl_/vid_."),
-    color: str = Field(None, description="""Background color as hex "#RRGGBB". Provide color OR image_url, not both.
-Professional colors:
-  Dark:   "#1E1E2E", "#2D2D3F", "#0F172A", "#1A1A2E"
-  Light:  "#FFFFFF", "#F8F9FA", "#F5F5F5", "#E8EAF6"
-  Blue:   "#1A73E8", "#E3F2FD"    Green: "#E8F5E9"
-  Warm:   "#FFF3E0", "#FFFDE7"    Purple: "#F3E5F5" """),
+    color: str = Field(None, description='Background color as hex "#RRGGBB". Provide color OR image_url, not both.'),
     image_url: str = Field(None, description="Public URL of background image. The image will be stretched to fill the slide. Provide image_url OR color, not both."),
 ) -> str:
     """
     Set the background of a slide to a solid color or an image.
 
-    MANDATORY VISUAL VERIFICATION (inspect → change → verify):
-    BEFORE: You MUST call get_page_thumbnail(slide_id=...) to inspect current state. Do NOT skip this step.
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) again to verify the result. If it looks wrong, iterate.
-
     Returns:
-        str: JSON with slide_id, background_type, and link.
+        JSON with slide_id, background_type, and link.
     """
     logger.info(f"[set_slide_background] Invoked. Email: '{user_google_email}', Slide: '{slide_id}'")
 
@@ -2241,25 +1983,16 @@ async def update_shape_properties(
     user_google_email: str = Field(..., description="The user's Google email address."),
     presentation_id: str = Field(..., description="The presentation ID. Get from create_presentation response (presentation_id) or from URL. Use the FULL ID."),
     element_id: str = Field(..., description="The element ID of the shape. Get from add_slide_shape response (element_id) or get_page response (elements[].id)."),
-    fill_color: str = Field(None, description="""Fill color as hex "#RRGGBB". Common colors:
-  Blue: "#1A73E8"    Red: "#EA4335"    Green: "#34A853"
-  Orange: "#FB8C00"  Purple: "#7C3AED"  Dark: "#1E1E2E"
-  Light: "#F5F5F5"   White: "#FFFFFF" """),
+    fill_color: str = Field(None, description='Fill color as hex "#RRGGBB".'),
     outline_color: str = Field(None, description='Outline/border color as hex "#RRGGBB".'),
     outline_weight: float = Field(None, description="Outline thickness in points. Common: 1 (thin), 2 (medium), 3 (thick)."),
 ) -> str:
     """
     Update visual properties of a shape (fill color, outline color, border weight).
-
-    Works on shapes and text boxes ONLY. For table cell backgrounds, use
-    batch_update_presentation with updateTableCellProperties instead.
-
-    MANDATORY VISUAL VERIFICATION (inspect → change → verify):
-    BEFORE: You MUST call get_page_thumbnail(slide_id=...) to inspect current state. Do NOT skip this step.
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) again to verify the result. If it looks wrong, iterate.
+    Works on shapes and text boxes ONLY — not table cells.
 
     Returns:
-        str: JSON with element_id, properties_updated list, and link.
+        JSON with element_id, properties_updated list, and link.
     """
     logger.info(f"[update_shape_properties] Invoked. Email: '{user_google_email}', Element: '{element_id}'")
 
@@ -2326,12 +2059,8 @@ async def transform_element(
     """
     Move, resize, or rotate any element on a slide.
 
-    MANDATORY VISUAL VERIFICATION (inspect → change → verify):
-    BEFORE: You MUST call get_page_thumbnail(slide_id=...) to inspect current state. Do NOT skip this step.
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) again to verify the result. If it looks wrong, iterate.
-
     Returns:
-        str: JSON with element_id, transforms_applied list, and link.
+        JSON with element_id, transforms_applied list, and link.
     """
     logger.info(f"[transform_element] Invoked. Email: '{user_google_email}', Element: '{element_id}'")
 
@@ -2340,7 +2069,7 @@ async def transform_element(
     # Fetch current element size and transform in one call
     elem_data = await _get_element_data(service, presentation_id, element_id)
     if not elem_data:
-        return error_response(404, f"Element '{element_id}' not found in presentation")
+        raise ToolError(f"Element '{element_id}' not found in presentation")
 
     current_transform = elem_data["transform"]
     current_size = elem_data["size"]
@@ -2436,11 +2165,8 @@ async def group_elements(
     """
     Group multiple elements so they move, resize, and rotate as one unit.
 
-    MANDATORY VISUAL VERIFICATION:
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) on affected slides to verify the result visually.
-
     Returns:
-        str: JSON with group_id, children, and link.
+        JSON with group_id, children, and link.
     """
     logger.info(f"[group_elements] Invoked. Email: '{user_google_email}', Elements: {element_ids}")
 
@@ -2472,11 +2198,8 @@ async def ungroup_elements(
     """
     Ungroup a previously grouped set of elements.
 
-    MANDATORY VISUAL VERIFICATION:
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) on affected slides to verify the result visually.
-
     Returns:
-        str: JSON with group_id, ungrouped=true, and link.
+        JSON with group_id, ungrouped=true, and link.
     """
     logger.info(f"[ungroup_elements] Invoked. Email: '{user_google_email}', Group: '{group_id}'")
 
@@ -2508,11 +2231,8 @@ async def delete_element(
     """
     Delete any element from a slide (shape, image, table, line, video, or group).
 
-    MANDATORY VISUAL VERIFICATION:
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) on affected slides to verify the result visually.
-
     Returns:
-        str: JSON with element_id, deleted=true, and link.
+        JSON with element_id, deleted=true, and link.
     """
     logger.info(f"[delete_element] Invoked. Email: '{user_google_email}', Element: '{element_id}'")
 
@@ -2540,13 +2260,6 @@ async def set_element_z_order(
 ) -> str:
     """
     Change the stacking order (z-order) of an element on a slide.
-
-    USE THIS FOR:
-    - Bringing text above background shapes: set_element_z_order(text_id, "BRING_TO_FRONT")
-    - Sending background rectangles behind content: set_element_z_order(bg_id, "SEND_TO_BACK")
-
-    MANDATORY VISUAL VERIFICATION:
-    AFTER: You MUST call get_page_thumbnail(slide_id=...) on affected slides to verify the result visually.
 
     Returns:
         str: JSON with element_id, operation, and link.

@@ -10,8 +10,8 @@ import functools
 from typing import List, Optional
 
 from googleapiclient.errors import HttpError
+from mcp.server.fastmcp.exceptions import ToolError
 from .api_enablement import get_api_enablement_message
-from .response import error_response
 from auth.google_auth import GoogleAuthenticationError
 
 logger = logging.getLogger(__name__)
@@ -313,11 +313,7 @@ def handle_http_errors(tool_name: str, is_read_only: bool = False, service_type:
                         f"  Tool params: {safe_params}",
                         exc_info=True
                     )
-                    return error_response(
-                        code=status_code,
-                        message=message,
-                        retryable=retryable
-                    )
+                    raise ToolError(message)
                 except TransientNetworkError:
                     # Re-raise without wrapping to preserve the specific error type
                     raise
