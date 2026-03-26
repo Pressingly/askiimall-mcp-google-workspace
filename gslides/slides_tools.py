@@ -1623,22 +1623,15 @@ async def add_slide_line(
     """
     logger.info(f"[add_slide_line] Invoked. Email: '{user_google_email}', Category: '{line_category}'")
 
-    # Compute bounding box (positive size) and line direction (scale).
-    # translate = top-left of bounding box, scale = which diagonal the line follows.
-    # scaleX=1,scaleY=1: top-left → bottom-right
-    # scaleX=-1,scaleY=1: top-right → bottom-left
-    # scaleX=1,scaleY=-1: bottom-left → top-right
-    # scaleX=-1,scaleY=-1: bottom-right → top-left
-    scale_x = 1
-    scale_y = 1
-    if width < 0:
-        scale_x = -1
-        x = x + width       # shift to bbox left edge
-        width = abs(width)
-    if height < 0:
-        scale_y = -1
-        y = y + height       # shift to bbox top edge
-        height = abs(height)
+    # Preserve line direction via scale. The Google Slides API transform uses:
+    #   start = (translateX, translateY)
+    #   end   = (scaleX * width + translateX, scaleY * height + translateY)
+    # Negative scale reverses direction from the start point.
+    # Size must be positive; translate stays at the user's start point (x, y).
+    scale_x = -1 if width < 0 else 1
+    scale_y = -1 if height < 0 else 1
+    width = abs(width)
+    height = abs(height)
 
     # BENT/CURVED connectors require both width and height > 0
     if line_category in ("BENT", "CURVED"):
