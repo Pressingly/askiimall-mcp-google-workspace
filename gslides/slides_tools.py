@@ -1623,12 +1623,21 @@ async def add_slide_line(
     """
     logger.info(f"[add_slide_line] Invoked. Email: '{user_google_email}', Category: '{line_category}'")
 
-    # Auto-fix negative dimensions by adjusting start position
+    # Compute bounding box (positive size) and line direction (scale).
+    # translate = top-left of bounding box, scale = which diagonal the line follows.
+    # scaleX=1,scaleY=1: top-left → bottom-right
+    # scaleX=-1,scaleY=1: top-right → bottom-left
+    # scaleX=1,scaleY=-1: bottom-left → top-right
+    # scaleX=-1,scaleY=-1: bottom-right → top-left
+    scale_x = 1
+    scale_y = 1
     if width < 0:
-        x = x + width
+        scale_x = -1
+        x = x + width       # shift to bbox left edge
         width = abs(width)
     if height < 0:
-        y = y + height
+        scale_y = -1
+        y = y + height       # shift to bbox top edge
         height = abs(height)
 
     # BENT/CURVED connectors require both width and height > 0
@@ -1639,11 +1648,14 @@ async def add_slide_line(
             height = max(1, width)
 
     element_id = f"line_{uuid.uuid4().hex[:24]}"
+    props = _element_properties(slide_id, x, y, width, height)
+    props["transform"]["scaleX"] = scale_x
+    props["transform"]["scaleY"] = scale_y
     await _batch_update(service, presentation_id, [{
         "createLine": {
             "objectId": element_id,
             "lineCategory": line_category,
-            "elementProperties": _element_properties(slide_id, x, y, width, height),
+            "elementProperties": props,
         }
     }])
 
