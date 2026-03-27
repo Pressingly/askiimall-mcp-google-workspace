@@ -2141,6 +2141,28 @@ async def transform_element(
     transform["shearY"] = sx * sin_a
     transform["scaleY"] = sy * cos_a
 
+    # Center-based rotation: the Google Slides API rotates around the top-left
+    # corner (translate point), which displaces the element. Compensate by adjusting
+    # translate so the visual center stays at the same page position.
+    # Only applies when rotation changes and position is not explicitly set.
+    if rotation is not None and x is None and y is None:
+        hw = orig_w / 2  # half-width in EMU (intrinsic)
+        hh = orig_h / 2  # half-height in EMU (intrinsic)
+
+        # Center offset from translate at the current (existing) angle
+        cur_cos = math.cos(existing_angle)
+        cur_sin = math.sin(existing_angle)
+        cur_cx = existing_sx * cur_cos * hw + (-existing_sy * cur_sin) * hh
+        cur_cy = existing_sx * cur_sin * hw + existing_sy * cur_cos * hh
+
+        # Center offset from translate at the requested angle
+        req_cx = sx * cos_a * hw + (-sy * sin_a) * hh
+        req_cy = sx * sin_a * hw + sy * cos_a * hh
+
+        # Adjust translate so the center stays at the same page position
+        transform["translateX"] = transform["translateX"] + cur_cx - req_cx
+        transform["translateY"] = transform["translateY"] + cur_cy - req_cy
+
     if transforms_applied:
         await _batch_update(service, presentation_id, [{
             "updatePageElementTransform": {
