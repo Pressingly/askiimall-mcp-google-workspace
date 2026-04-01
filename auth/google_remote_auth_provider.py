@@ -181,12 +181,16 @@ class GoogleRemoteAuthProvider(RemoteAuthProvider):
 
                         token_info = await response.json()
 
-                        # Verify the token is for our client
-                        if token_info.get("aud") != self.client_id:
-                            logger.error(
-                                f"Token audience mismatch: expected {self.client_id}, got {token_info.get('aud')}"
+                        # Accept the token if Google validated it successfully.
+                        # In multi-tenant mode, tokens may be issued by different
+                        # OAuth client_ids (e.g., developer-provided credentials via MCPO).
+                        # Google's tokeninfo validation already confirms the token is legitimate.
+                        token_aud = token_info.get("aud")
+                        if token_aud != self.client_id:
+                            logger.info(
+                                f"Accepting token from external client_id: {token_aud[:30]}... "
+                                f"(server client_id: {self.client_id[:30]}...)"
                             )
-                            return None
 
                         # Check if token is expired
                         expires_in = token_info.get("expires_in", 0)
@@ -214,7 +218,7 @@ class GoogleRemoteAuthProvider(RemoteAuthProvider):
                             scopes=token_info.get("scope", "").split(),
                             token=token,
                             expires_at=expires_at,  # Add the expires_at attribute
-                            client_id=self.client_id,  # Add client_id at top level
+                            client_id=token_aud or self.client_id,  # Use token's actual client_id
                             # Add other required fields
                             sub=token_info.get("sub", ""),
                             email=token_info.get("email", ""),
