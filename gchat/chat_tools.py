@@ -97,9 +97,9 @@ async def list_spaces(
 
     filter_param = None
     if space_type == "room":
-        filter_param = "spaceType = SPACE"
+        filter_param = 'spaceType = "SPACE"'
     elif space_type == "dm":
-        filter_param = "spaceType = DIRECT_MESSAGE"
+        filter_param = 'spaceType = "DIRECT_MESSAGE"'
 
     request_params = {"pageSize": page_size}
     if filter_param:
