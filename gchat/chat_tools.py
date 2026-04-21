@@ -5,9 +5,8 @@ This module provides MCP tools for interacting with Google Chat API.
 """
 import logging
 import asyncio
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 
-from googleapiclient.errors import HttpError
 from pydantic import Field
 
 from auth.service_decorator import require_google_service
