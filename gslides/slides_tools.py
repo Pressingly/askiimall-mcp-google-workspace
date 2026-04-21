@@ -2171,7 +2171,7 @@ async def group_elements(
     logger.info(f"[group_elements] Invoked. Email: '{user_google_email}', Elements: {element_ids}")
 
     group_id = uuid.uuid4().hex
-    result = await _batch_update(service, presentation_id, [{
+    await _batch_update(service, presentation_id, [{
         "groupObjects": {
             "groupObjectId": group_id,
             "childrenObjectIds": element_ids,

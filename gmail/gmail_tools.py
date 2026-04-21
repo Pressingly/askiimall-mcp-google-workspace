@@ -793,7 +793,7 @@ async def list_gmail_labels(
         service.users().labels().list(userId="me").execute
     )
     labels = response.get("labels", [])
-    mapped = [_map_label(l) for l in labels]
+    mapped = [_map_label(label) for label in labels]
     return success_response({"labels": mapped, "count": len(mapped)})
 
 

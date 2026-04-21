@@ -351,10 +351,16 @@ async def get_events(
         f"[get_events] Final API parameters - calendarId: '{calendar_id}', timeMin: '{effective_time_min}', timeMax: '{effective_time_max}', maxResults: {max_results}, query: '{query}'"
     )
 
-    # Choose field projection based on detail level
-    fields = CALENDAR_FIELDS["list_events"] if condense_event_details else CALENDAR_FIELDS["get_event"].replace(
-        "id,", "items(id,"
-    ).replace("colorId", "colorId),nextPageToken")
+    # Choose field projection based on detail level. When the caller asks for
+    # full detail, wrap `get_event`'s single-resource projection into the
+    # `items(...)` envelope the list endpoint expects and re-attach
+    # nextPageToken.
+    if condense_event_details:
+        fields = CALENDAR_FIELDS["list_events"]
+    else:
+        fields = CALENDAR_FIELDS["get_event"].replace(
+            "id,", "items(id,", 1
+        ) + "),nextPageToken"
 
     # Build the request parameters dynamically
     request_params = {
@@ -364,7 +370,7 @@ async def get_events(
         "maxResults": max_results,
         "singleEvents": True,
         "orderBy": "startTime",
-        "fields": CALENDAR_FIELDS["list_events"],
+        "fields": fields,
     }
 
     if query:
@@ -870,8 +876,6 @@ def _find_free_slots(
     Returns:
         List of free slot dicts with start, end, and duration_minutes.
     """
-    from datetime import timezone as tz
-
     def parse_dt(s: str) -> datetime.datetime:
         # Handle both 'Z' suffix and +00:00 offset
         s = s.replace("Z", "+00:00")

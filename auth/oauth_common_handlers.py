@@ -1,7 +1,6 @@
 """Common OAuth 2.1 request handlers used by both legacy and modern auth providers."""
 
 import logging
-import os
 import time
 from datetime import datetime, timedelta
 from urllib.parse import urlencode, parse_qs
@@ -13,7 +12,6 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
 from google.oauth2.credentials import Credentials
 
-from auth.oauth21_session_store import store_token_session
 from auth.google_auth import save_credentials_to_file
 from auth.scopes import get_current_scopes
 from auth.oauth_config import get_oauth_config
@@ -122,8 +120,8 @@ async def handle_proxy_token_exchange(request: Request):
     service = None
     client_id = None
     client_secret = None
-    original_state = None
-    
+
+
     try:
         # Get form data with validation
         try:

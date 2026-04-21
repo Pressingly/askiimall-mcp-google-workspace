@@ -7,7 +7,7 @@ This module provides MCP tools for interacting with Google Sheets API.
 import logging
 import asyncio
 import json
-from typing import List, Optional, Union, Dict, Any
+from typing import List, Optional, Dict, Any
 
 from pydantic import Field
 
