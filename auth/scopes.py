@@ -39,6 +39,7 @@ GMAIL_LABELS_SCOPE = 'https://www.googleapis.com/auth/gmail.labels'
 CHAT_READONLY_SCOPE = 'https://www.googleapis.com/auth/chat.messages.readonly'
 CHAT_WRITE_SCOPE = 'https://www.googleapis.com/auth/chat.messages'
 CHAT_SPACES_SCOPE = 'https://www.googleapis.com/auth/chat.spaces'
+CHAT_MEMBERSHIPS_READONLY_SCOPE = 'https://www.googleapis.com/auth/chat.memberships.readonly'
 
 # Google Sheets API scopes
 SHEETS_READONLY_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly'
@@ -96,7 +97,8 @@ GMAIL_SCOPES = [
 CHAT_SCOPES = [
     CHAT_READONLY_SCOPE,
     CHAT_WRITE_SCOPE,
-    CHAT_SPACES_SCOPE
+    CHAT_SPACES_SCOPE,
+    CHAT_MEMBERSHIPS_READONLY_SCOPE
 ]
 
 SHEETS_SCOPES = [

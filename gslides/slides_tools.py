@@ -1623,13 +1623,15 @@ async def add_slide_line(
     """
     logger.info(f"[add_slide_line] Invoked. Email: '{user_google_email}', Category: '{line_category}'")
 
-    # Auto-fix negative dimensions by adjusting start position
-    if width < 0:
-        x = x + width
-        width = abs(width)
-    if height < 0:
-        y = y + height
-        height = abs(height)
+    # Preserve line direction via scale. The Google Slides API transform uses:
+    #   start = (translateX, translateY)
+    #   end   = (scaleX * width + translateX, scaleY * height + translateY)
+    # Negative scale reverses direction from the start point.
+    # Size must be positive; translate stays at the user's start point (x, y).
+    scale_x = -1 if width < 0 else 1
+    scale_y = -1 if height < 0 else 1
+    width = abs(width)
+    height = abs(height)
 
     # BENT/CURVED connectors require both width and height > 0
     if line_category in ("BENT", "CURVED"):
@@ -1639,11 +1641,14 @@ async def add_slide_line(
             height = max(1, width)
 
     element_id = f"line_{uuid.uuid4().hex[:24]}"
+    props = _element_properties(slide_id, x, y, width, height)
+    props["transform"]["scaleX"] = scale_x
+    props["transform"]["scaleY"] = scale_y
     await _batch_update(service, presentation_id, [{
         "createLine": {
             "objectId": element_id,
             "lineCategory": line_category,
-            "elementProperties": _element_properties(slide_id, x, y, width, height),
+            "elementProperties": props,
         }
     }])
 
@@ -2135,6 +2140,28 @@ async def transform_element(
     transform["shearX"] = -sy * sin_a
     transform["shearY"] = sx * sin_a
     transform["scaleY"] = sy * cos_a
+
+    # Center-based rotation: the Google Slides API rotates around the top-left
+    # corner (translate point), which displaces the element. Compensate by adjusting
+    # translate so the visual center stays at the same page position.
+    # Only applies when rotation changes and position is not explicitly set.
+    if rotation is not None and x is None and y is None:
+        hw = orig_w / 2  # half-width in EMU (intrinsic)
+        hh = orig_h / 2  # half-height in EMU (intrinsic)
+
+        # Center offset from translate at the current (existing) angle
+        cur_cos = math.cos(existing_angle)
+        cur_sin = math.sin(existing_angle)
+        cur_cx = existing_sx * cur_cos * hw + (-existing_sy * cur_sin) * hh
+        cur_cy = existing_sx * cur_sin * hw + existing_sy * cur_cos * hh
+
+        # Center offset from translate at the requested angle
+        req_cx = sx * cos_a * hw + (-sy * sin_a) * hh
+        req_cy = sx * sin_a * hw + sy * cos_a * hh
+
+        # Adjust translate so the center stays at the same page position
+        transform["translateX"] = transform["translateX"] + cur_cx - req_cx
+        transform["translateY"] = transform["translateY"] + cur_cy - req_cy
 
     if transforms_applied:
         await _batch_update(service, presentation_id, [{

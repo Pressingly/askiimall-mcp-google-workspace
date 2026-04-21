@@ -140,30 +140,35 @@ async def handle_proxy_token_exchange(request: Request):
             # Convert to single values and validate
             request_data = {k: v[0] if v else '' for k, v in form_data.items()}
             validate_token_request(request_data)
-            
-            # Extract credentials from server-side storage (keyed by state)
-            state_param = request_data.get('state')
-            
-            if state_param:
-                try:
-                    # Retrieve credentials stored during authorization
-                    from auth.oauth_config import _get_pending_credentials
-                    credentials_data = _get_pending_credentials(state_param)
-                    
-                    if credentials_data:
-                        service = credentials_data.get('service')
-                        client_id = credentials_data.get('client_id')
-                        client_secret = credentials_data.get('client_secret')
-                        logger.info(f"Retrieved credentials from cache for service: {service}")
-                    else:
-                        logger.warning(f"No credentials found in cache for state: {state_param[:10]}...")
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to retrieve credentials from cache: {e}")
-            
-            # Fallback to global environment variables if credentials not in cache
+
+            # Priority 1: Extract credentials from POST body (MCPO sends via client_secret_post)
+            body_client_id = request_data.get('client_id')
+            body_client_secret = request_data.get('client_secret')
+            if body_client_id and body_client_secret:
+                client_id = body_client_id
+                client_secret = body_client_secret
+                logger.info(f"Using credentials from POST body (client_id={client_id[:20]}...)")
+
+            # Priority 2: Extract from server-side cache (browser-based flows via /authorize)
             if not client_id or not client_secret:
-                logger.debug("Using global environment variable credentials as fallback")
+                state_param = request_data.get('state')
+                if state_param:
+                    try:
+                        # Retrieve credentials stored during authorization
+                        from auth.oauth_config import _get_pending_credentials
+                        credentials_data = _get_pending_credentials(state_param)
+                        if credentials_data:
+                            service = credentials_data.get('service')
+                            client_id = client_id or credentials_data.get('client_id')
+                            client_secret = client_secret or credentials_data.get('client_secret')
+                            logger.info(f"Retrieved credentials from cache for service: {service}")
+                        else:
+                            logger.warning(f"No credentials found in cache for state: {state_param[:10]}...")
+                    except Exception as e:
+                        logger.warning(f"Failed to retrieve credentials from cache: {e}")
+
+            # Priority 3: Fallback to global environment variables
+            if not client_id or not client_secret:
                 config = get_oauth_config()
                 client_id = client_id or config.client_id
                 client_secret = client_secret or config.client_secret
