@@ -155,19 +155,21 @@ def _prepare_gmail_message(
     thread_id: Optional[str] = None,
     in_reply_to: Optional[str] = None,
     references: Optional[str] = None,
+    content_type: str = "plain",
 ) -> tuple[str, Optional[str]]:
     """
     Prepare a Gmail message with threading support.
 
     Args:
         subject: Email subject
-        body: Email body (plain text)
+        body: Email body
         to: Optional recipient email address
         cc: Optional CC email address
         bcc: Optional BCC email address
         thread_id: Optional Gmail thread ID to reply within
         in_reply_to: Optional Message-ID of the message being replied to
         references: Optional chain of Message-IDs for proper threading
+        content_type: MIME subtype for the body, either "plain" or "html"
 
     Returns:
         Tuple of (raw_message, thread_id) where raw_message is base64 encoded
@@ -178,7 +180,7 @@ def _prepare_gmail_message(
         reply_subject = f"Re: {subject}"
 
     # Prepare the email
-    message = MIMEText(body)
+    message = MIMEText(body, content_type)
     message["subject"] = reply_subject
 
     # Add recipients if provided
@@ -264,10 +266,12 @@ def _map_label(raw: dict) -> Dict:
 @handle_http_errors("search_gmail_messages", is_read_only=True, service_type="gmail")
 @require_google_service("gmail", "gmail_read")
 async def search_gmail_messages(
-    service, 
-    query: str = Field(..., description="The search query. Supports standard Gmail search operators (e.g., 'from:example@gmail.com', 'subject:meeting', 'has:attachment')."), 
-    user_google_email: str = Field(..., description="The user's Google email address."), 
-    page_size: int = Field(10, description="The maximum number of messages to return. Defaults to 10.")
+    service,
+    query: str = Field(..., description="The search query. Supports standard Gmail search operators (e.g., 'from:example@gmail.com', 'subject:meeting', 'has:attachment')."),
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    page_size: int = Field(20, description="The maximum number of messages to return per page. Defaults to 20. Gmail API caps this at 500."),
+    page_token: Optional[str] = Field(None, description="Optional pagination token from a previous response's 'next_page_token' to fetch the next page of results."),
+    include_spam_trash: bool = Field(False, description="If true, include messages from SPAM and TRASH in the results. Defaults to False."),
 ) -> str:
     """
     Searches messages in a user's Gmail account based on a query.
@@ -280,11 +284,17 @@ async def search_gmail_messages(
         f"[search_gmail_messages] Email: '{user_google_email}', Query: '{query}'"
     )
 
+    list_kwargs = {
+        "userId": "me",
+        "q": query,
+        "maxResults": page_size,
+        "includeSpamTrash": include_spam_trash,
+    }
+    if page_token:
+        list_kwargs["pageToken"] = page_token
+
     response = await asyncio.to_thread(
-        service.users()
-        .messages()
-        .list(userId="me", q=query, maxResults=page_size)
-        .execute
+        service.users().messages().list(**list_kwargs).execute
     )
 
     # Handle potential null response (but empty dict {} is valid)
@@ -298,11 +308,14 @@ async def search_gmail_messages(
 
     mapped = [m for m in (_map_message_compact(msg) for msg in messages) if m is not None]
     estimated_total = response.get("resultSizeEstimate")
+    next_page_token = response.get("nextPageToken")
 
     logger.info(f"[search_gmail_messages] Found {len(mapped)} messages")
     data = {"messages": mapped, "count": len(mapped)}
     if estimated_total is not None:
         data["estimated_total"] = estimated_total
+    if next_page_token:
+        data["next_page_token"] = next_page_token
     return success_response(data)
 
 
@@ -498,6 +511,7 @@ async def send_gmail_message(
     thread_id: Optional[str] = Field(None, description="Optional Gmail thread ID to reply within. When provided, sends a reply instead of a new email."),
     in_reply_to: Optional[str] = Field(None, description="Optional Message-ID of the message being replied to. Used for proper email threading. Format: '<message-id@domain.com>'."),
     references: Optional[str] = Field(None, description="Optional chain of Message-IDs for proper threading. Should include all previous Message-IDs in the conversation thread, space-separated."),
+    content_type: Literal["plain", "html"] = Field("plain", description="MIME subtype for the email body. Use 'plain' for plain text or 'html' for HTML-formatted emails."),
 ) -> str:
     """
     Sends an email using the user's Gmail account. Supports both new emails and replies.
@@ -542,6 +556,7 @@ async def send_gmail_message(
         thread_id=thread_id,
         in_reply_to=in_reply_to,
         references=references,
+        content_type=content_type,
     )
 
     send_body = {"raw": raw_message}
@@ -574,6 +589,7 @@ async def draft_gmail_message(
     thread_id: Optional[str] = Field(None, description="Optional Gmail thread ID to reply within. When provided, creates a reply draft."),
     in_reply_to: Optional[str] = Field(None, description="Optional Message-ID of the message being replied to. Used for proper email threading. Format: '<message-id@domain.com>'."),
     references: Optional[str] = Field(None, description="Optional chain of Message-IDs for proper threading. Should include all previous Message-IDs in the conversation thread, space-separated."),
+    content_type: Literal["plain", "html"] = Field("plain", description="MIME subtype for the draft body. Use 'plain' for plain text or 'html' for HTML-formatted drafts."),
 ) -> str:
     """
     Creates a draft email in the user's Gmail account. Supports both new drafts and reply drafts.
@@ -618,6 +634,7 @@ async def draft_gmail_message(
         thread_id=thread_id,
         in_reply_to=in_reply_to,
         references=references,
+        content_type=content_type,
     )
 
     # Create a draft instead of sending
@@ -957,6 +974,86 @@ async def batch_modify_gmail_message_labels(
     )
 
     return success_response({"modified_count": len(message_ids)})
+
+
+@server.tool()
+@handle_http_errors("list_gmail_drafts", is_read_only=True, service_type="gmail")
+@require_google_service("gmail", "gmail_read")
+async def list_gmail_drafts(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    page_size: int = Field(20, description="The maximum number of drafts to return per page. Defaults to 20."),
+    page_token: Optional[str] = Field(None, description="Optional pagination token from a previous response's 'next_page_token' to fetch the next page."),
+    query: Optional[str] = Field(None, description="Optional Gmail search query to filter drafts (e.g., 'subject:meeting')."),
+    include_spam_trash: bool = Field(False, description="If true, include drafts from SPAM and TRASH. Defaults to False."),
+) -> str:
+    """
+    Lists drafts in the user's Gmail account.
+
+    Returns:
+        str: List of drafts with draft IDs, message IDs, and thread IDs.
+    """
+    logger.info(f"[list_gmail_drafts] Invoked. Email: '{user_google_email}'")
+
+    list_kwargs = {
+        "userId": "me",
+        "maxResults": page_size,
+        "includeSpamTrash": include_spam_trash,
+    }
+    if page_token:
+        list_kwargs["pageToken"] = page_token
+    if query:
+        list_kwargs["q"] = query
+
+    response = await asyncio.to_thread(
+        service.users().drafts().list(**list_kwargs).execute
+    )
+
+    drafts = response.get("drafts", []) or []
+    mapped = []
+    for draft in drafts:
+        message = draft.get("message", {}) or {}
+        mapped.append({
+            "draft_id": draft.get("id"),
+            "message_id": message.get("id"),
+            "thread_id": message.get("threadId"),
+        })
+
+    data = {"drafts": mapped, "count": len(mapped)}
+    estimated_total = response.get("resultSizeEstimate")
+    next_page_token = response.get("nextPageToken")
+    if estimated_total is not None:
+        data["estimated_total"] = estimated_total
+    if next_page_token:
+        data["next_page_token"] = next_page_token
+    return success_response(data)
+
+
+@server.tool()
+@handle_http_errors("get_gmail_profile", is_read_only=True, service_type="gmail")
+@require_google_service("gmail", "gmail_read")
+async def get_gmail_profile(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+) -> str:
+    """
+    Gets the authenticated user's Gmail profile, including email address and mailbox statistics.
+
+    Returns:
+        str: Profile details including email address, total messages, total threads, and history ID.
+    """
+    logger.info(f"[get_gmail_profile] Invoked. Email: '{user_google_email}'")
+
+    profile = await asyncio.to_thread(
+        service.users().getProfile(userId="me").execute
+    )
+
+    return success_response({
+        "email_address": profile.get("emailAddress"),
+        "messages_total": profile.get("messagesTotal"),
+        "threads_total": profile.get("threadsTotal"),
+        "history_id": profile.get("historyId"),
+    })
 
 
 # ──────────────────────────────────────────────────────────────
