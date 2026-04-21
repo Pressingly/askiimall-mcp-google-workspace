@@ -15,6 +15,14 @@ from gdocs.docs_helpers import (
     create_find_replace_request,
     create_insert_table_request,
     create_insert_page_break_request,
+    create_paragraph_style_request,
+    create_delete_bullets_request,
+    create_insert_table_row_request,
+    create_insert_table_column_request,
+    create_delete_table_row_request,
+    create_delete_table_column_request,
+    create_merge_table_cells_request,
+    create_unmerge_table_cells_request,
     validate_operation
 )
 
@@ -170,22 +178,31 @@ class BatchOperationManager:
             request = create_format_text_request(
                 op['start_index'], op['end_index'],
                 op.get('bold'), op.get('italic'), op.get('underline'),
-                op.get('font_size'), op.get('font_family')
+                op.get('font_size'), op.get('font_family'),
+                strikethrough=op.get('strikethrough'),
+                small_caps=op.get('small_caps'),
+                foreground_color=op.get('foreground_color'),
+                background_color=op.get('background_color'),
+                baseline_offset=op.get('baseline_offset'),
+                link_url=op.get('link_url')
             )
-            
+
             if not request:
                 raise ValueError("No formatting options provided")
-                
+
             # Build format description
             format_changes = []
             for param, name in [
                 ('bold', 'bold'), ('italic', 'italic'), ('underline', 'underline'),
-                ('font_size', 'font size'), ('font_family', 'font family')
+                ('strikethrough', 'strikethrough'), ('small_caps', 'small caps'),
+                ('font_size', 'font size'), ('font_family', 'font family'),
+                ('foreground_color', 'text color'), ('background_color', 'bg color'),
+                ('baseline_offset', 'baseline'), ('link_url', 'link')
             ]:
                 if op.get(param) is not None:
                     value = f"{op[param]}pt" if param == 'font_size' else op[param]
                     format_changes.append(f"{name}: {value}")
-                    
+
             description = f"format text {op['start_index']}-{op['end_index']} ({', '.join(format_changes)})"
             
         elif op_type == 'insert_table':
@@ -201,11 +218,72 @@ class BatchOperationManager:
                 op['find_text'], op['replace_text'], op.get('match_case', False)
             )
             description = f"find/replace '{op['find_text']}' → '{op['replace_text']}'"
-            
+
+        elif op_type == 'format_paragraph':
+            request = create_paragraph_style_request(
+                op['start_index'], op['end_index'],
+                named_style_type=op.get('named_style_type'),
+                alignment=op.get('alignment'),
+                line_spacing=op.get('line_spacing'),
+                space_above=op.get('space_above'),
+                space_below=op.get('space_below'),
+                indent_first_line=op.get('indent_first_line'),
+                indent_start=op.get('indent_start'),
+                indent_end=op.get('indent_end')
+            )
+            if not request:
+                raise ValueError("No paragraph formatting options provided")
+            description = f"format paragraph {op['start_index']}-{op['end_index']}"
+
+        elif op_type == 'delete_bullets':
+            request = create_delete_bullets_request(op['start_index'], op['end_index'])
+            description = f"delete bullets {op['start_index']}-{op['end_index']}"
+
+        elif op_type == 'insert_table_row':
+            request = create_insert_table_row_request(
+                op['table_start_index'], op['row_index'], op.get('insert_below', True)
+            )
+            description = f"insert table row at {op['row_index']}"
+
+        elif op_type == 'insert_table_column':
+            request = create_insert_table_column_request(
+                op['table_start_index'], op['column_index'], op.get('insert_right', True)
+            )
+            description = f"insert table column at {op['column_index']}"
+
+        elif op_type == 'delete_table_row':
+            request = create_delete_table_row_request(
+                op['table_start_index'], op['row_index']
+            )
+            description = f"delete table row {op['row_index']}"
+
+        elif op_type == 'delete_table_column':
+            request = create_delete_table_column_request(
+                op['table_start_index'], op['column_index']
+            )
+            description = f"delete table column {op['column_index']}"
+
+        elif op_type == 'merge_table_cells':
+            request = create_merge_table_cells_request(
+                op['table_start_index'], op['row_index'], op['column_index'],
+                op['row_span'], op['column_span']
+            )
+            description = f"merge cells at ({op['row_index']},{op['column_index']}) span {op['row_span']}x{op['column_span']}"
+
+        elif op_type == 'unmerge_table_cells':
+            request = create_unmerge_table_cells_request(
+                op['table_start_index'], op['row_index'], op['column_index'],
+                op['row_span'], op['column_span']
+            )
+            description = f"unmerge cells at ({op['row_index']},{op['column_index']}) span {op['row_span']}x{op['column_span']}"
+
         else:
             supported_types = [
                 'insert_text', 'delete_text', 'replace_text', 'format_text',
-                'insert_table', 'insert_page_break', 'find_replace'
+                'format_paragraph', 'insert_table', 'insert_page_break', 'find_replace',
+                'delete_bullets', 'insert_table_row', 'insert_table_column',
+                'delete_table_row', 'delete_table_column',
+                'merge_table_cells', 'unmerge_table_cells'
             ]
             raise ValueError(f"Unsupported operation type '{op_type}'. Supported: {', '.join(supported_types)}")
             
@@ -293,11 +371,47 @@ class BatchOperationManager:
                     'required': ['find_text', 'replace_text'],
                     'optional': ['match_case'],
                     'description': 'Find and replace text throughout document'
+                },
+                'format_paragraph': {
+                    'required': ['start_index', 'end_index'],
+                    'optional': ['named_style_type', 'alignment', 'line_spacing', 'space_above', 'space_below', 'indent_first_line', 'indent_start', 'indent_end'],
+                    'description': 'Apply paragraph formatting (headings, alignment, spacing, indentation)'
+                },
+                'delete_bullets': {
+                    'required': ['start_index', 'end_index'],
+                    'description': 'Remove bullet/list formatting from text range'
+                },
+                'insert_table_row': {
+                    'required': ['table_start_index', 'row_index'],
+                    'optional': ['insert_below'],
+                    'description': 'Insert a row in an existing table'
+                },
+                'insert_table_column': {
+                    'required': ['table_start_index', 'column_index'],
+                    'optional': ['insert_right'],
+                    'description': 'Insert a column in an existing table'
+                },
+                'delete_table_row': {
+                    'required': ['table_start_index', 'row_index'],
+                    'description': 'Delete a row from an existing table'
+                },
+                'delete_table_column': {
+                    'required': ['table_start_index', 'column_index'],
+                    'description': 'Delete a column from an existing table'
+                },
+                'merge_table_cells': {
+                    'required': ['table_start_index', 'row_index', 'column_index', 'row_span', 'column_span'],
+                    'description': 'Merge a range of table cells'
+                },
+                'unmerge_table_cells': {
+                    'required': ['table_start_index', 'row_index', 'column_index', 'row_span', 'column_span'],
+                    'description': 'Unmerge previously merged table cells'
                 }
             },
             'example_operations': [
                 {"type": "insert_text", "index": 1, "text": "Hello World"},
                 {"type": "format_text", "start_index": 1, "end_index": 12, "bold": True},
+                {"type": "format_paragraph", "start_index": 1, "end_index": 12, "named_style_type": "HEADING_1", "alignment": "CENTER"},
                 {"type": "insert_table", "index": 20, "rows": 2, "columns": 3}
             ]
         }

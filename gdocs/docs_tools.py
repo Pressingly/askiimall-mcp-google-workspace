@@ -26,7 +26,16 @@ from gdocs.docs_helpers import (
     create_insert_table_request,
     create_insert_page_break_request,
     create_insert_image_request,
-    create_bullet_list_request
+    create_bullet_list_request,
+    create_paragraph_style_request,
+    create_delete_bullets_request,
+    create_insert_table_row_request,
+    create_insert_table_column_request,
+    create_delete_table_row_request,
+    create_delete_table_column_request,
+    create_merge_table_cells_request,
+    create_unmerge_table_cells_request,
+    hex_to_rgb_color,
 )
 
 # Import document structure and table utilities
@@ -36,7 +45,8 @@ from gdocs.docs_structure import (
     analyze_document_complexity
 )
 from gdocs.docs_tables import (
-    extract_table_as_data
+    extract_table_as_data,
+    build_table_style_requests,
 )
 
 # Import operation managers for complex business logic
@@ -321,8 +331,14 @@ async def modify_doc_text(
     bold: bool = Field(None, description="Whether to make text bold. Options: True (bold), False (not bold), None (leave unchanged)."),
     italic: bool = Field(None, description="Whether to make text italic. Options: True (italic), False (not italic), None (leave unchanged)."),
     underline: bool = Field(None, description="Whether to underline text. Options: True (underlined), False (not underlined), None (leave unchanged)."),
+    strikethrough: bool = Field(None, description="Whether to apply strikethrough. Options: True, False, None (leave unchanged)."),
+    small_caps: bool = Field(None, description="Whether to use small caps. Options: True, False, None (leave unchanged)."),
     font_size: int = Field(None, description="Font size in points (e.g., 12, 14, 16). If None, leaves font size unchanged."),
     font_family: str = Field(None, description="Font family name (e.g., 'Arial', 'Times New Roman', 'Calibri'). If None, leaves font family unchanged."),
+    foreground_color: str = Field(None, description="Text color as hex string (e.g., '#FF0000' for red, '#0000FF' for blue). If None, leaves color unchanged."),
+    background_color: str = Field(None, description="Text highlight/background color as hex string (e.g., '#FFFF00' for yellow). If None, leaves unchanged."),
+    baseline_offset: str = Field(None, description="Baseline offset for superscript/subscript. Options: 'SUPERSCRIPT', 'SUBSCRIPT', 'NONE'. If None, leaves unchanged."),
+    link_url: str = Field(None, description="URL to create a hyperlink on the text (e.g., 'https://example.com'). If None, leaves unchanged."),
 ) -> str:
     """
     Modifies text in a Google Doc - can insert/replace text and/or apply formatting in a single operation.
@@ -330,7 +346,7 @@ async def modify_doc_text(
     Returns:
         str: Confirmation message with operation details
     """
-    logger.info(f"[modify_doc_text] Doc={document_id}, start={start_index}, end={end_index}, text={text is not None}, formatting={any([bold, italic, underline, font_size, font_family])}")
+    logger.info(f"[modify_doc_text] Doc={document_id}, start={start_index}, end={end_index}, text={text is not None}")
 
     # Input validation
     validator = ValidationManager()
@@ -339,15 +355,28 @@ async def modify_doc_text(
     if not is_valid:
         return f"Error: {error_msg}"
 
+    # Check if any formatting parameter is provided
+    all_formatting_params = [bold, italic, underline, strikethrough, small_caps,
+                             font_size, font_family, foreground_color, background_color,
+                             baseline_offset, link_url]
+    has_formatting = any(p is not None for p in all_formatting_params)
+
     # Validate that we have something to do
-    if text is None and not any([bold is not None, italic is not None, underline is not None, font_size, font_family]):
-        return "Error: Must provide either 'text' to insert/replace, or formatting parameters (bold, italic, underline, font_size, font_family)."
+    if text is None and not has_formatting:
+        return "Error: Must provide either 'text' to insert/replace, or formatting parameters (bold, italic, underline, strikethrough, small_caps, font_size, font_family, foreground_color, background_color, baseline_offset, link_url)."
 
     # Validate text formatting params if provided
-    if any([bold is not None, italic is not None, underline is not None, font_size, font_family]):
-        is_valid, error_msg = validator.validate_text_formatting_params(bold, italic, underline, font_size, font_family)
-        if not is_valid:
-            return f"Error: {error_msg}"
+    if has_formatting:
+        # Only run the legacy validator when one of the params it knows about is set;
+        # has_formatting already guarantees at least one param (possibly a newer one).
+        if any(p is not None for p in (bold, italic, underline, font_size, font_family)):
+            is_valid, error_msg = validator.validate_text_formatting_params(bold, italic, underline, font_size, font_family)
+            if not is_valid:
+                return f"Error: {error_msg}"
+
+        # Validate baseline_offset
+        if baseline_offset is not None and baseline_offset not in ['SUPERSCRIPT', 'SUBSCRIPT', 'NONE']:
+            return "Error: baseline_offset must be 'SUPERSCRIPT', 'SUBSCRIPT', or 'NONE'."
 
         # For formatting, we need end_index
         if end_index is None:
@@ -385,7 +414,7 @@ async def modify_doc_text(
             operations.append(f"Inserted text at index {start_index}")
 
     # Handle formatting
-    if any([bold is not None, italic is not None, underline is not None, font_size, font_family]):
+    if has_formatting:
         # Adjust range for formatting based on text operations
         format_start = start_index
         format_end = end_index
@@ -406,7 +435,12 @@ async def modify_doc_text(
         if format_end is not None and format_end <= format_start:
             format_end = format_start + 1
 
-        requests.append(create_format_text_request(format_start, format_end, bold, italic, underline, font_size, font_family))
+        requests.append(create_format_text_request(
+            format_start, format_end, bold, italic, underline, font_size, font_family,
+            strikethrough=strikethrough, small_caps=small_caps,
+            foreground_color=foreground_color, background_color=background_color,
+            baseline_offset=baseline_offset, link_url=link_url
+        ))
 
         format_details = []
         if bold is not None:
@@ -415,10 +449,22 @@ async def modify_doc_text(
             format_details.append(f"italic={italic}")
         if underline is not None:
             format_details.append(f"underline={underline}")
+        if strikethrough is not None:
+            format_details.append(f"strikethrough={strikethrough}")
+        if small_caps is not None:
+            format_details.append(f"small_caps={small_caps}")
         if font_size:
             format_details.append(f"font_size={font_size}")
         if font_family:
             format_details.append(f"font_family={font_family}")
+        if foreground_color:
+            format_details.append(f"foreground_color={foreground_color}")
+        if background_color:
+            format_details.append(f"background_color={background_color}")
+        if baseline_offset:
+            format_details.append(f"baseline_offset={baseline_offset}")
+        if link_url:
+            format_details.append(f"link_url={link_url}")
 
         operations.append(f"Applied formatting ({', '.join(format_details)}) to range {format_start}-{format_end}")
 
@@ -685,7 +731,7 @@ async def batch_update_doc(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     document_id: str = Field(..., description="The ID of the document to update. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
-    operations: list = Field(..., description="List of operation dictionaries to execute in a single batch. Each operation should contain: 'type' (operation type) and operation-specific parameters. Supported types: 'insert_text', 'delete_text', 'replace_text', 'format_text', 'insert_table', 'insert_page_break'. Example: [{'type': 'insert_text', 'index': 1, 'text': 'Hello'}, {'type': 'format_text', 'start_index': 1, 'end_index': 6, 'bold': True}]"),
+    operations: list = Field(..., description="List of operation dictionaries to execute in a single batch. Each operation should contain: 'type' (operation type) and operation-specific parameters. Supported types: 'insert_text', 'delete_text', 'replace_text', 'format_text', 'format_paragraph', 'insert_table', 'insert_page_break', 'find_replace', 'delete_bullets', 'insert_table_row', 'insert_table_column', 'delete_table_row', 'delete_table_column', 'merge_table_cells', 'unmerge_table_cells'. Example: [{'type': 'insert_text', 'index': 1, 'text': 'Hello'}, {'type': 'format_paragraph', 'start_index': 1, 'end_index': 6, 'named_style_type': 'HEADING_1'}]"),
 ) -> str:
     """
     Executes multiple document operations in a single atomic batch update.
@@ -1003,6 +1049,333 @@ async def debug_table_structure(
         debug_info['cells'].append(row_info)
 
     return success_response(debug_info)
+
+
+@server.tool()
+@handle_http_errors("create_doc_header_footer", service_type="docs")
+@require_google_service("docs", "docs_write")
+async def create_doc_header_footer(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    document_id: str = Field(..., description="The ID of the document. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
+    section_type: str = Field(..., description="Type of section to create. Options: 'header' or 'footer'."),
+    header_footer_type: str = Field("DEFAULT", description="Type of header/footer. Options: 'DEFAULT' (all pages), 'FIRST_PAGE' (first page only), 'EVEN_PAGE' (even pages only). Defaults to 'DEFAULT'."),
+) -> str:
+    """
+    Creates a new header or footer in a Google Doc.
+
+    Use this BEFORE update_doc_headers_footers if the document doesn't have a header/footer yet.
+
+    Returns:
+        str: Confirmation message with creation details
+    """
+    logger.info(f"[create_doc_header_footer] Doc={document_id}, type={section_type}, hf_type={header_footer_type}")
+
+    validator = ValidationManager()
+    is_valid, error_msg = validator.validate_document_id(document_id)
+    if not is_valid:
+        return f"Error: {error_msg}"
+
+    header_footer_manager = HeaderFooterManager(service)
+    success, message = await header_footer_manager.create_header_footer(
+        document_id, section_type, header_footer_type
+    )
+
+    if success:
+        return success_response({
+            "document_id": document_id,
+            "section_type": section_type,
+            "header_footer_type": header_footer_type,
+            "link": f"https://docs.google.com/document/d/{document_id}/edit",
+        })
+    else:
+        return f"Error: {message}"
+
+
+@server.tool()
+@handle_http_errors("format_doc_paragraph", service_type="docs")
+@require_google_service("docs", "docs_write")
+async def format_doc_paragraph(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    document_id: str = Field(..., description="The ID of the document to update. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
+    start_index: int = Field(..., description="Start position of the paragraph range (0-based index)."),
+    end_index: int = Field(..., description="End position of the paragraph range."),
+    named_style_type: str = Field(None, description="Paragraph style type. Options: 'TITLE', 'SUBTITLE', 'HEADING_1' through 'HEADING_6', 'NORMAL_TEXT'."),
+    alignment: str = Field(None, description="Text alignment. Options: 'START' (left), 'CENTER', 'END' (right), 'JUSTIFIED'."),
+    line_spacing: float = Field(None, description="Line spacing as percentage (e.g., 100 for single spacing, 150 for 1.5x, 200 for double spacing)."),
+    space_above: float = Field(None, description="Space above paragraph in points."),
+    space_below: float = Field(None, description="Space below paragraph in points."),
+    indent_first_line: float = Field(None, description="First line indent in points."),
+    indent_start: float = Field(None, description="Left indent in points."),
+    indent_end: float = Field(None, description="Right indent in points."),
+) -> str:
+    """
+    Applies paragraph-level formatting to a range of text in a Google Doc.
+
+    Use this to set headings (HEADING_1-6, TITLE, SUBTITLE), alignment, line spacing, and indentation.
+
+    Returns:
+        str: Confirmation message with formatting details
+    """
+    logger.info(f"[format_doc_paragraph] Doc={document_id}, range={start_index}-{end_index}")
+
+    validator = ValidationManager()
+    is_valid, error_msg = validator.validate_document_id(document_id)
+    if not is_valid:
+        return f"Error: {error_msg}"
+
+    is_valid, error_msg = validator.validate_index_range(start_index, end_index)
+    if not is_valid:
+        return f"Error: {error_msg}"
+
+    # Validate named_style_type
+    valid_styles = ['TITLE', 'SUBTITLE', 'HEADING_1', 'HEADING_2', 'HEADING_3',
+                    'HEADING_4', 'HEADING_5', 'HEADING_6', 'NORMAL_TEXT']
+    if named_style_type is not None and named_style_type not in valid_styles:
+        return f"Error: Invalid named_style_type '{named_style_type}'. Must be one of: {', '.join(valid_styles)}"
+
+    # Validate alignment
+    valid_alignments = ['START', 'CENTER', 'END', 'JUSTIFIED']
+    if alignment is not None and alignment not in valid_alignments:
+        return f"Error: Invalid alignment '{alignment}'. Must be one of: {', '.join(valid_alignments)}"
+
+    request = create_paragraph_style_request(
+        start_index, end_index,
+        named_style_type=named_style_type,
+        alignment=alignment,
+        line_spacing=line_spacing,
+        space_above=space_above,
+        space_below=space_below,
+        indent_first_line=indent_first_line,
+        indent_start=indent_start,
+        indent_end=indent_end
+    )
+
+    if not request:
+        return "Error: At least one paragraph formatting parameter must be provided."
+
+    await asyncio.to_thread(
+        service.documents().batchUpdate(
+            documentId=document_id,
+            body={'requests': [request]}
+        ).execute
+    )
+
+    format_details = []
+    if named_style_type:
+        format_details.append(f"style={named_style_type}")
+    if alignment:
+        format_details.append(f"alignment={alignment}")
+    if line_spacing:
+        format_details.append(f"line_spacing={line_spacing}%")
+    if space_above is not None:
+        format_details.append(f"space_above={space_above}pt")
+    if space_below is not None:
+        format_details.append(f"space_below={space_below}pt")
+
+    return success_response({
+        "document_id": document_id,
+        "range": {"start": start_index, "end": end_index},
+        "formatting": format_details,
+        "link": f"https://docs.google.com/document/d/{document_id}/edit",
+    })
+
+
+@server.tool()
+@handle_http_errors("style_doc_table_cells", service_type="docs")
+@require_google_service("docs", "docs_write")
+async def style_doc_table_cells(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    document_id: str = Field(..., description="The ID of the document to update. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
+    table_start_index: int = Field(..., description="Starting index of the table. Get this from inspect_doc_structure or debug_table_structure."),
+    border_width: float = Field(None, description="Border width in points for all cell borders."),
+    border_color: str = Field(None, description="Border color as hex string (e.g., '#000000' for black)."),
+    background_color: str = Field(None, description="Cell background color as hex string (e.g., '#F0F0F0' for light gray). Applies to all cells."),
+    header_background: str = Field(None, description="Background color for the header row (first row) as hex string (e.g., '#4285F4' for Google blue)."),
+) -> str:
+    """
+    Applies styling to table cells in a Google Doc (background colors, borders).
+
+    Use inspect_doc_structure or debug_table_structure first to get the table_start_index.
+
+    Returns:
+        str: Confirmation message with styling details
+    """
+    logger.info(f"[style_doc_table_cells] Doc={document_id}, table_start={table_start_index}")
+
+    validator = ValidationManager()
+    is_valid, error_msg = validator.validate_document_id(document_id)
+    if not is_valid:
+        return f"Error: {error_msg}"
+
+    style_options = {}
+    if border_width is not None:
+        style_options['border_width'] = border_width
+    if border_color is not None:
+        style_options['border_color'] = hex_to_rgb_color(border_color)
+    if background_color is not None:
+        style_options['background_color'] = hex_to_rgb_color(background_color)
+    if header_background is not None:
+        style_options['header_background'] = hex_to_rgb_color(header_background)
+
+    if not style_options:
+        return "Error: At least one styling parameter must be provided (border_width, border_color, background_color, or header_background)."
+
+    requests = build_table_style_requests(table_start_index, style_options)
+
+    if not requests:
+        return "Error: Could not build style requests from the provided parameters."
+
+    await asyncio.to_thread(
+        service.documents().batchUpdate(
+            documentId=document_id,
+            body={'requests': requests}
+        ).execute
+    )
+
+    return success_response({
+        "document_id": document_id,
+        "table_start_index": table_start_index,
+        "styles_applied": list(style_options.keys()),
+        "link": f"https://docs.google.com/document/d/{document_id}/edit",
+    })
+
+
+@server.tool()
+@handle_http_errors("modify_doc_table", service_type="docs")
+@require_google_service("docs", "docs_write")
+async def modify_doc_table(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    document_id: str = Field(..., description="The ID of the document to update. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
+    table_start_index: int = Field(..., description="Starting index of the table. Get this from inspect_doc_structure or debug_table_structure."),
+    operation: str = Field(..., description="Operation to perform. Options: 'insert_row', 'insert_column', 'delete_row', 'delete_column', 'merge_cells', 'unmerge_cells'."),
+    row_index: int = Field(None, description="Row index for row operations (0-based). Required for insert_row, delete_row, merge_cells, unmerge_cells."),
+    column_index: int = Field(None, description="Column index for column operations (0-based). Required for insert_column, delete_column, merge_cells, unmerge_cells."),
+    insert_below: bool = Field(True, description="For insert_row: insert below the reference row. Defaults to True."),
+    insert_right: bool = Field(True, description="For insert_column: insert to the right of the reference column. Defaults to True."),
+    row_span: int = Field(None, description="For merge/unmerge: number of rows to span. Required for merge_cells and unmerge_cells."),
+    column_span: int = Field(None, description="For merge/unmerge: number of columns to span. Required for merge_cells and unmerge_cells."),
+) -> str:
+    """
+    Modifies table structure in a Google Doc (insert/delete rows/columns, merge/unmerge cells).
+
+    Use inspect_doc_structure or debug_table_structure first to get the table_start_index.
+
+    Returns:
+        str: Confirmation message with operation details
+    """
+    logger.info(f"[modify_doc_table] Doc={document_id}, table_start={table_start_index}, op={operation}")
+
+    validator = ValidationManager()
+    is_valid, error_msg = validator.validate_document_id(document_id)
+    if not is_valid:
+        return f"Error: {error_msg}"
+
+    valid_operations = ['insert_row', 'insert_column', 'delete_row', 'delete_column', 'merge_cells', 'unmerge_cells']
+    if operation not in valid_operations:
+        return f"Error: Invalid operation '{operation}'. Must be one of: {', '.join(valid_operations)}"
+
+    requests = []
+
+    if operation == 'insert_row':
+        if row_index is None:
+            return "Error: row_index is required for insert_row operation."
+        requests.append(create_insert_table_row_request(table_start_index, row_index, insert_below))
+        description = f"Inserted row {'below' if insert_below else 'above'} row {row_index}"
+
+    elif operation == 'insert_column':
+        if column_index is None:
+            return "Error: column_index is required for insert_column operation."
+        requests.append(create_insert_table_column_request(table_start_index, column_index, insert_right))
+        description = f"Inserted column {'right of' if insert_right else 'left of'} column {column_index}"
+
+    elif operation == 'delete_row':
+        if row_index is None:
+            return "Error: row_index is required for delete_row operation."
+        requests.append(create_delete_table_row_request(table_start_index, row_index))
+        description = f"Deleted row {row_index}"
+
+    elif operation == 'delete_column':
+        if column_index is None:
+            return "Error: column_index is required for delete_column operation."
+        requests.append(create_delete_table_column_request(table_start_index, column_index))
+        description = f"Deleted column {column_index}"
+
+    elif operation == 'merge_cells':
+        if any(v is None for v in [row_index, column_index, row_span, column_span]):
+            return "Error: row_index, column_index, row_span, and column_span are all required for merge_cells."
+        requests.append(create_merge_table_cells_request(table_start_index, row_index, column_index, row_span, column_span))
+        description = f"Merged cells at ({row_index},{column_index}) spanning {row_span}x{column_span}"
+
+    elif operation == 'unmerge_cells':
+        if any(v is None for v in [row_index, column_index, row_span, column_span]):
+            return "Error: row_index, column_index, row_span, and column_span are all required for unmerge_cells."
+        requests.append(create_unmerge_table_cells_request(table_start_index, row_index, column_index, row_span, column_span))
+        description = f"Unmerged cells at ({row_index},{column_index}) spanning {row_span}x{column_span}"
+
+    await asyncio.to_thread(
+        service.documents().batchUpdate(
+            documentId=document_id,
+            body={'requests': requests}
+        ).execute
+    )
+
+    return success_response({
+        "document_id": document_id,
+        "operation": operation,
+        "description": description,
+        "link": f"https://docs.google.com/document/d/{document_id}/edit",
+    })
+
+
+@server.tool()
+@handle_http_errors("delete_doc_bullets", service_type="docs")
+@require_google_service("docs", "docs_write")
+async def delete_doc_bullets(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    document_id: str = Field(..., description="The ID of the document to update. Use the FULL ID exactly from search_docs, list_docs_in_folder, or create_doc - do NOT truncate or modify it."),
+    start_index: int = Field(..., description="Start position of the text range to remove bullets from (0-based index)."),
+    end_index: int = Field(..., description="End position of the text range to remove bullets from."),
+) -> str:
+    """
+    Removes bullet or list formatting from a range of text in a Google Doc.
+
+    Returns:
+        str: Confirmation message
+    """
+    logger.info(f"[delete_doc_bullets] Doc={document_id}, range={start_index}-{end_index}")
+
+    validator = ValidationManager()
+    is_valid, error_msg = validator.validate_document_id(document_id)
+    if not is_valid:
+        return f"Error: {error_msg}"
+
+    is_valid, error_msg = validator.validate_index_range(start_index, end_index)
+    if not is_valid:
+        return f"Error: {error_msg}"
+
+    requests = [create_delete_bullets_request(start_index, end_index)]
+
+    await asyncio.to_thread(
+        service.documents().batchUpdate(
+            documentId=document_id,
+            body={'requests': requests}
+        ).execute
+    )
+
+    return success_response({
+        "document_id": document_id,
+        "range": {"start": start_index, "end": end_index},
+        "link": f"https://docs.google.com/document/d/{document_id}/edit",
+    })
+
+
+# Now update modify_doc_text to accept extended text styling parameters
+# (The existing tool is updated via the extended create_format_text_request)
 
 
 # Create comment management tools for documents
