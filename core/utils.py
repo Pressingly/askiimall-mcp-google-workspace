@@ -281,7 +281,6 @@ def handle_http_errors(tool_name: str, is_read_only: bool = False, service_type:
                     user_google_email = kwargs.get("user_google_email", "N/A")
                     error_details = str(error)
                     status_code = error.resp.status
-                    retryable = status_code in (429, 500, 502, 503, 504)
 
                     # Check if this is an API not enabled error
                     if status_code == 403 and "accessNotConfigured" in error_details:
