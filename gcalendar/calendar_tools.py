@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 
 # Google Calendar API field projections
 CALENDAR_FIELDS = {
-    "list": "items(id,summary,primary,description,timeZone,backgroundColor)",
-    "list_events": "items(id,summary,start,end,htmlLink,description,location,status,attendees(email,displayName,responseStatus),conferenceData(entryPoints))",
-    "get_event": "id,summary,start,end,htmlLink,description,location,status,creator,organizer,attendees(email,displayName,responseStatus),conferenceData(entryPoints),reminders,attachments(fileUrl,title,mimeType),created,updated",
+    "list": "items(id,summary,primary,description,timeZone,backgroundColor,foregroundColor,colorId,accessRole,selected,summaryOverride,defaultReminders,conferenceProperties),nextPageToken",
+    "list_events": "items(id,summary,start,end,htmlLink,description,location,status,attendees(email,displayName,responseStatus,self),conferenceData(entryPoints),recurrence,recurringEventId,visibility,transparency,colorId),nextPageToken",
+    "get_event": "id,summary,start,end,htmlLink,description,location,status,creator,organizer,attendees(email,displayName,responseStatus,self,comment,optional,additionalGuests,organizer),conferenceData(entryPoints),reminders,attachments(fileUrl,title,mimeType),created,updated,recurrence,recurringEventId,visibility,transparency,colorId",
 }
 
 
@@ -47,14 +47,32 @@ def _extract_meet_link(event: Dict[str, Any]) -> Optional[str]:
 
 def _map_calendar(raw: Dict[str, Any]) -> Dict[str, Any]:
     """Map a raw Calendar API calendar object to a clean response shape."""
-    return {
+    result = {
         "id": raw["id"],
         "title": raw.get("summary"),
         "primary": raw.get("primary", False),
         "description": raw.get("description"),
         "timezone": raw.get("timeZone"),
-        "color": raw.get("backgroundColor"),
+        "backgroundColor": raw.get("backgroundColor"),
+        "foregroundColor": raw.get("foregroundColor"),
+        "colorId": raw.get("colorId"),
+        "accessRole": raw.get("accessRole"),
+        "selected": raw.get("selected"),
+        "summaryOverride": raw.get("summaryOverride"),
     }
+    if raw.get("defaultReminders"):
+        result["defaultReminders"] = raw["defaultReminders"]
+    if raw.get("conferenceProperties"):
+        result["conferenceProperties"] = raw["conferenceProperties"]
+    return result
+
+
+def _get_my_response_status(raw: Dict[str, Any]) -> Optional[str]:
+    """Extract the authenticated user's response status from attendees."""
+    for attendee in raw.get("attendees", []):
+        if attendee.get("self"):
+            return attendee.get("responseStatus")
+    return None
 
 
 def _map_event(raw: Dict[str, Any], compact: bool = False) -> Dict[str, Any]:
@@ -66,6 +84,7 @@ def _map_event(raw: Dict[str, Any], compact: bool = False) -> Dict[str, Any]:
     """
     start = raw.get("start", {})
     end = raw.get("end", {})
+    all_day = "date" in start and "dateTime" not in start
     result = {
         "id": raw.get("id"),
         "title": raw.get("summary"),
@@ -73,6 +92,13 @@ def _map_event(raw: Dict[str, Any], compact: bool = False) -> Dict[str, Any]:
         "end": end.get("dateTime") or end.get("date"),
         "link": raw.get("htmlLink"),
         "status": raw.get("status"),
+        "allDay": all_day,
+        "myResponseStatus": _get_my_response_status(raw),
+        "recurrence": raw.get("recurrence"),
+        "recurringEventId": raw.get("recurringEventId"),
+        "visibility": raw.get("visibility"),
+        "transparency": raw.get("transparency"),
+        "colorId": raw.get("colorId"),
     }
     if compact:
         result["attendee_count"] = len(raw.get("attendees", []))
@@ -84,6 +110,11 @@ def _map_event(raw: Dict[str, Any], compact: bool = False) -> Dict[str, Any]:
                 "email": a.get("email"),
                 "name": a.get("displayName"),
                 "response": a.get("responseStatus"),
+                "comment": a.get("comment"),
+                "optional": a.get("optional"),
+                "organizer": a.get("organizer"),
+                "self": a.get("self"),
+                "additionalGuests": a.get("additionalGuests"),
             }
             for a in raw.get("attendees", [])
         ]
@@ -235,27 +266,35 @@ def _correct_time_format_for_api(
 @handle_http_errors("list_calendars", is_read_only=True, service_type="calendar")
 @require_google_service("calendar", "calendar_read")
 async def list_calendars(
-    service, 
-    user_google_email: str = Field(..., description="The user's Google email address.")
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    page_token: Optional[str] = Field(None, description="Token for retrieving the next page of results. Use the next_page_token from a previous response."),
 ) -> str:
     """
     Retrieves a list of calendars accessible to the authenticated user.
+    Supports pagination for accounts with many calendars.
 
     Returns:
         str: A formatted list of the user's calendars (summary, ID, primary status).
     """
     logger.info(f"[list_calendars] Invoked. Email: '{user_google_email}'")
 
+    request_params = {"fields": CALENDAR_FIELDS["list"]}
+    if page_token:
+        request_params["pageToken"] = page_token
+
     calendar_list_response = await asyncio.to_thread(
-        lambda: service.calendarList().list(
-            fields=CALENDAR_FIELDS["list"]
-        ).execute()
+        lambda: service.calendarList().list(**request_params).execute()
     )
     items = calendar_list_response.get("items", [])
+    next_page_token = calendar_list_response.get("nextPageToken")
 
     calendars = [_map_calendar(cal) for cal in items]
     logger.info(f"Successfully listed {len(calendars)} calendars for {user_google_email}.")
-    return success_response({"calendars": calendars, "count": len(calendars)})
+    response_data = {"calendars": calendars, "count": len(calendars)}
+    if next_page_token:
+        response_data["next_page_token"] = next_page_token
+    return success_response(response_data)
 
 
 @server.tool()
@@ -267,12 +306,16 @@ async def get_events(
     calendar_id: str = Field("primary", description="The ID of the calendar to query. Use 'primary' for the user's primary calendar. Use the FULL ID exactly from list_calendars - do NOT truncate or modify it."),
     time_min: Optional[str] = Field(None, description="The start of the time range (inclusive) in RFC3339 format. Examples: '2024-05-12T10:00:00Z' (with time) or '2024-05-12' (date only). If omitted, defaults to the current time."),
     time_max: Optional[str] = Field(None, description="The end of the time range (exclusive) in RFC3339 format. Examples: '2024-05-13T10:00:00Z' (with time) or '2024-05-13' (date only). If omitted, events starting from time_min onwards are considered (up to max_results)."),
-    max_results: int = Field(25, description="The maximum number of events to return. Defaults to 25."),
+    max_results: int = Field(50, description="The maximum number of events to return per page. Defaults to 50, max 250."),
     query: Optional[str] = Field(None, description="A keyword to search for within event fields (summary, description, location)."),
+    timezone: Optional[str] = Field(None, description="IANA timezone for interpreting times in the request and response (e.g., 'America/New_York')."),
+    condense_event_details: bool = Field(True, description="If true (default), returns condensed event format. If false, returns full event details including attendees and attachments."),
+    page_token: Optional[str] = Field(None, description="Token for pagination. Use the next_page_token from a previous response to get the next set of results."),
 ) -> str:
     """
     Retrieves a list of events from a specified Google Calendar within a given time range.
     You can also search for events by keyword by supplying the optional "query" param.
+    Supports pagination for busy calendars or long time ranges.
 
     Returns:
         str: A formatted list of events (summary, start and end times, link) within the specified range.
@@ -280,6 +323,9 @@ async def get_events(
     logger.info(
         f"[get_events] Raw time parameters - time_min: '{time_min}', time_max: '{time_max}', query: '{query}'"
     )
+
+    # Clamp max_results to valid range
+    max_results = min(max(1, max_results), 250)
 
     # Ensure time_min and time_max are correctly formatted for the API
     formatted_time_min = _correct_time_format_for_api(time_min, "time_min")
@@ -305,6 +351,11 @@ async def get_events(
         f"[get_events] Final API parameters - calendarId: '{calendar_id}', timeMin: '{effective_time_min}', timeMax: '{effective_time_max}', maxResults: {max_results}, query: '{query}'"
     )
 
+    # Choose field projection based on detail level
+    fields = CALENDAR_FIELDS["list_events"] if condense_event_details else CALENDAR_FIELDS["get_event"].replace(
+        "id,", "items(id,"
+    ).replace("colorId", "colorId),nextPageToken")
+
     # Build the request parameters dynamically
     request_params = {
         "calendarId": calendar_id,
@@ -318,6 +369,10 @@ async def get_events(
 
     if query:
         request_params["q"] = query
+    if timezone:
+        request_params["timeZone"] = timezone
+    if page_token:
+        request_params["pageToken"] = page_token
 
     events_result = await asyncio.to_thread(
         lambda: service.events()
@@ -325,10 +380,15 @@ async def get_events(
         .execute()
     )
     items = events_result.get("items", [])
+    next_page_token = events_result.get("nextPageToken")
 
-    events = [_map_event(item, compact=True) for item in items]
+    compact = condense_event_details
+    events = [_map_event(item, compact=compact) for item in items]
     logger.info(f"Successfully retrieved {len(events)} events for {user_google_email}.")
-    return success_response({"events": events, "count": len(events)})
+    response_data = {"events": events, "count": len(events)}
+    if next_page_token:
+        response_data["next_page_token"] = next_page_token
+    return success_response(response_data)
 
 
 @server.tool()
@@ -349,6 +409,9 @@ async def create_event(
     add_google_meet: bool = Field(False, description="Whether to add a Google Meet video conference link to the event. Defaults to False."),
     reminders: Optional[Union[str, List[Dict[str, Any]]]] = Field(None, description="JSON string or list of reminder objects. Each reminder should have 'method' (\"popup\" or \"email\") and 'minutes' (0-40320). Maximum 5 reminders. Example: '[{\"method\": \"popup\", \"minutes\": 15}]' or [{\"method\": \"popup\", \"minutes\": 15}]."),
     use_default_reminders: bool = Field(True, description="Whether to use the calendar's default reminders. If False and reminders are provided, uses custom reminders. Defaults to True."),
+    recurrence: Optional[List[str]] = Field(None, description="List of RRULE strings for recurring events (e.g., ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR'])."),
+    color_id: Optional[str] = Field(None, description="Event color ID ('1'-'11'): 1=Lavender, 2=Sage, 3=Grape, 4=Flamingo, 5=Banana, 6=Tangerine, 7=Peacock, 8=Graphite, 9=Blueberry, 10=Basil, 11=Tomato."),
+    send_updates: Optional[str] = Field(None, description="Who receives notification of this event creation: 'all' (all attendees), 'externalOnly' (only external attendees), or 'none'."),
 ) -> str:
     """
     Creates a new event.
@@ -405,6 +468,11 @@ async def create_event(
         
         event_body["reminders"] = reminder_data
 
+    if recurrence:
+        event_body["recurrence"] = recurrence
+    if color_id:
+        event_body["colorId"] = color_id
+
     if add_google_meet:
         request_id = str(uuid.uuid4())
         event_body["conferenceData"] = {
@@ -416,6 +484,15 @@ async def create_event(
             }
         }
         logger.info(f"[create_event] Adding Google Meet conference with request ID: {request_id}")
+
+    # Build insert kwargs
+    insert_kwargs = {
+        "calendarId": calendar_id,
+        "body": event_body,
+        "conferenceDataVersion": 1 if add_google_meet else 0,
+    }
+    if send_updates:
+        insert_kwargs["sendUpdates"] = send_updates
 
     if attachments:
         # Accept both file URLs and file IDs. If a URL, extract the fileId.
@@ -459,18 +536,13 @@ async def create_event(
                     "title": title,
                     "mimeType": mime_type,
                 })
+        insert_kwargs["supportsAttachments"] = True
         created_event = await asyncio.to_thread(
-            lambda: service.events().insert(
-                calendarId=calendar_id, body=event_body, supportsAttachments=True,
-                conferenceDataVersion=1 if add_google_meet else 0
-            ).execute()
+            lambda: service.events().insert(**insert_kwargs).execute()
         )
     else:
         created_event = await asyncio.to_thread(
-            lambda: service.events().insert(
-                calendarId=calendar_id, body=event_body,
-                conferenceDataVersion=1 if add_google_meet else 0
-            ).execute()
+            lambda: service.events().insert(**insert_kwargs).execute()
         )
     mapped = _map_event(created_event, compact=False)
     logger.info(
@@ -497,6 +569,8 @@ async def modify_event(
     add_google_meet: Optional[bool] = Field(None, description="Whether to add or remove Google Meet video conference. If True, adds Google Meet; if False, removes it; if None, leaves unchanged."),
     reminders: Optional[Union[str, List[Dict[str, Any]]]] = Field(None, description="JSON string or list of reminder objects to replace existing reminders. Each reminder should have 'method' (\"popup\" or \"email\") and 'minutes' (0-40320). Maximum 5 reminders. Example: '[{\"method\": \"popup\", \"minutes\": 15}]'."),
     use_default_reminders: Optional[bool] = Field(None, description="Whether to use calendar's default reminders. If specified, overrides current reminder settings. If None, preserves existing reminder settings."),
+    color_id: Optional[str] = Field(None, description="Event color ID ('1'-'11'): 1=Lavender, 2=Sage, 3=Grape, 4=Flamingo, 5=Banana, 6=Tangerine, 7=Peacock, 8=Graphite, 9=Blueberry, 10=Basil, 11=Tomato."),
+    send_updates: Optional[str] = Field(None, description="Who receives notification of this event update: 'all' (all attendees), 'externalOnly' (only external attendees), or 'none'."),
 ) -> str:
     """
     Modifies an existing event.
@@ -532,7 +606,9 @@ async def modify_event(
         event_body["location"] = location
     if attendees is not None:
         event_body["attendees"] = [{"email": email} for email in attendees]
-    
+    if color_id is not None:
+        event_body["colorId"] = color_id
+
     # Handle reminders
     if reminders is not None or use_default_reminders is not None:
         reminder_data = {}
@@ -602,7 +678,8 @@ async def modify_event(
             "location": location,
             "attendees": event_body.get("attendees"),
             "start": event_body.get("start"),
-            "end": event_body.get("end")
+            "end": event_body.get("end"),
+            "colorId": color_id,
         })
 
         # Handle Google Meet conference data
@@ -641,9 +718,18 @@ async def modify_event(
             )
 
     # Proceed with the update
+    update_kwargs = {
+        "calendarId": calendar_id,
+        "eventId": event_id,
+        "body": event_body,
+        "conferenceDataVersion": 1,
+    }
+    if send_updates:
+        update_kwargs["sendUpdates"] = send_updates
+
     updated_event = await asyncio.to_thread(
         lambda: service.events()
-        .update(calendarId=calendar_id, eventId=event_id, body=event_body, conferenceDataVersion=1)
+        .update(**update_kwargs)
         .execute()
     )
 
@@ -661,7 +747,8 @@ async def delete_event(
     service, 
     user_google_email: str = Field(..., description="The user's Google email address."),
     event_id: str = Field(..., description="The ID of the event to delete. Use the FULL ID exactly from get_events, get_event, or create_event - do NOT truncate or modify it."),
-    calendar_id: str = Field("primary", description="Calendar ID. Use 'primary' for the user's primary calendar. Calendar IDs can be obtained using list_calendars.")
+    calendar_id: str = Field("primary", description="Calendar ID. Use 'primary' for the user's primary calendar. Calendar IDs can be obtained using list_calendars."),
+    send_updates: Optional[str] = Field(None, description="Who receives notification of this event deletion: 'all' (all attendees), 'externalOnly' (only external attendees), or 'none'."),
 ) -> str:
     """
     Deletes an existing event.
@@ -699,8 +786,11 @@ async def delete_event(
             )
 
     # Proceed with the deletion
+    delete_kwargs = {"calendarId": calendar_id, "eventId": event_id}
+    if send_updates:
+        delete_kwargs["sendUpdates"] = send_updates
     await asyncio.to_thread(
-        lambda: service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
+        lambda: service.events().delete(**delete_kwargs).execute()
     )
 
     logger.info(f"Event deleted successfully for {user_google_email}. ID: {event_id}")
@@ -732,3 +822,385 @@ async def get_event(
     mapped = _map_event(event, compact=False)
     logger.info(f"[get_event] Successfully retrieved event {event_id} for {user_google_email}.")
     return success_response(mapped)
+
+
+# ---------------------------------------------------------------------------
+# Helper functions for FreeBusy-based tools
+# ---------------------------------------------------------------------------
+
+def _merge_busy_intervals(busy_list: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Merge overlapping busy intervals into a minimal set.
+
+    Args:
+        busy_list: List of {"start": ..., "end": ...} ISO 8601 strings.
+
+    Returns:
+        Sorted, merged list of busy intervals.
+    """
+    if not busy_list:
+        return []
+    parsed = sorted(
+        busy_list,
+        key=lambda b: b["start"],
+    )
+    merged: List[Dict[str, str]] = [parsed[0]]
+    for interval in parsed[1:]:
+        if interval["start"] <= merged[-1]["end"]:
+            if interval["end"] > merged[-1]["end"]:
+                merged[-1]["end"] = interval["end"]
+        else:
+            merged.append(interval)
+    return merged
+
+
+def _find_free_slots(
+    busy_intervals: List[Dict[str, str]],
+    time_min: str,
+    time_max: str,
+    min_duration_minutes: int = 30,
+) -> List[Dict[str, Any]]:
+    """Compute free slots as the complement of busy intervals within the given range.
+
+    Args:
+        busy_intervals: Merged list of busy intervals (ISO 8601 strings).
+        time_min: Start of search range (ISO 8601).
+        time_max: End of search range (ISO 8601).
+        min_duration_minutes: Minimum slot duration in minutes to include.
+
+    Returns:
+        List of free slot dicts with start, end, and duration_minutes.
+    """
+    from datetime import timezone as tz
+
+    def parse_dt(s: str) -> datetime.datetime:
+        # Handle both 'Z' suffix and +00:00 offset
+        s = s.replace("Z", "+00:00")
+        return datetime.datetime.fromisoformat(s)
+
+    range_start = parse_dt(time_min)
+    range_end = parse_dt(time_max)
+    min_delta = datetime.timedelta(minutes=min_duration_minutes)
+
+    free_slots: List[Dict[str, Any]] = []
+    cursor = range_start
+
+    for interval in busy_intervals:
+        busy_start = parse_dt(interval["start"])
+        busy_end = parse_dt(interval["end"])
+
+        if busy_start > cursor:
+            gap = busy_start - cursor
+            if gap >= min_delta:
+                free_slots.append({
+                    "start": cursor.isoformat(),
+                    "end": busy_start.isoformat(),
+                    "duration_minutes": int(gap.total_seconds() / 60),
+                })
+        if busy_end > cursor:
+            cursor = busy_end
+
+    # Remaining time after last busy interval
+    if cursor < range_end:
+        gap = range_end - cursor
+        if gap >= min_delta:
+            free_slots.append({
+                "start": cursor.isoformat(),
+                "end": range_end.isoformat(),
+                "duration_minutes": int(gap.total_seconds() / 60),
+            })
+
+    return free_slots
+
+
+# ---------------------------------------------------------------------------
+# New tool: respond_to_event
+# ---------------------------------------------------------------------------
+
+@server.tool()
+@handle_http_errors("respond_to_event", service_type="calendar")
+@require_google_service("calendar", "calendar_events")
+async def respond_to_event(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    event_id: str = Field(..., description="The ID of the event to respond to."),
+    response: str = Field(..., description="Your attendance decision: 'accepted', 'declined', or 'tentative'."),
+    calendar_id: str = Field("primary", description="The calendar containing the event."),
+    comment: Optional[str] = Field(None, description="Optional message to send to the organizer with your response."),
+    send_updates: Optional[str] = Field("all", description="Who receives notification: 'all' (default), 'externalOnly', or 'none'."),
+) -> str:
+    """
+    Responds to a calendar event invitation (accept, decline, or tentative).
+
+    Returns:
+        str: Confirmation with your updated response status and event details.
+    """
+    logger.info(f"[respond_to_event] Invoked. Email: '{user_google_email}', Event ID: {event_id}, Response: {response}")
+
+    valid_responses = {"accepted", "declined", "tentative"}
+    if response not in valid_responses:
+        raise Exception(f"Invalid response '{response}'. Must be one of: {', '.join(valid_responses)}")
+
+    # Fetch the event to get the attendees list
+    event = await asyncio.to_thread(
+        lambda: service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+    )
+
+    attendees = event.get("attendees", [])
+    user_found = False
+    for attendee in attendees:
+        if attendee.get("self"):
+            attendee["responseStatus"] = response
+            if comment:
+                attendee["comment"] = comment
+            user_found = True
+            break
+
+    if not user_found:
+        raise Exception(
+            f"You ({user_google_email}) are not listed as an attendee of this event. "
+            "You can only respond to events you've been invited to."
+        )
+
+    # Patch the event with updated attendees
+    patch_kwargs = {
+        "calendarId": calendar_id,
+        "eventId": event_id,
+        "body": {"attendees": attendees},
+    }
+    if send_updates:
+        patch_kwargs["sendUpdates"] = send_updates
+
+    updated_event = await asyncio.to_thread(
+        lambda: service.events().patch(**patch_kwargs).execute()
+    )
+
+    mapped = _map_event(updated_event, compact=False)
+    logger.info(f"[respond_to_event] Successfully responded '{response}' to event {event_id}")
+    return success_response({"response": response, "comment": comment, "event": mapped})
+
+
+# ---------------------------------------------------------------------------
+# New tool: find_my_free_time
+# ---------------------------------------------------------------------------
+
+@server.tool()
+@handle_http_errors("find_my_free_time", is_read_only=True, service_type="calendar")
+@require_google_service("calendar", "calendar_read")
+async def find_my_free_time(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    calendar_ids: List[str] = Field(..., description="List of calendar IDs to check for availability (e.g., ['primary'])."),
+    time_min: str = Field(..., description="Start of time range to check in RFC3339 format (e.g., '2024-05-12T00:00:00Z')."),
+    time_max: str = Field(..., description="End of time range to check in RFC3339 format (e.g., '2024-05-12T23:59:59Z')."),
+    timezone: Optional[str] = Field(None, description="IANA timezone for interpreting times and displaying results (e.g., 'America/New_York')."),
+    min_duration: int = Field(30, description="Minimum free slot duration in minutes to include. Defaults to 30."),
+) -> str:
+    """
+    Finds free time slots in your personal calendar(s) where no events are scheduled.
+
+    Analyzes your calendar(s) to find gaps between events, helping you identify
+    available time for focused work, personal tasks, or new meetings.
+
+    Returns:
+        str: List of free time slots with start, end, and duration.
+    """
+    logger.info(f"[find_my_free_time] Invoked. Email: '{user_google_email}', Calendars: {calendar_ids}")
+
+    formatted_time_min = _correct_time_format_for_api(time_min, "time_min") or time_min
+    formatted_time_max = _correct_time_format_for_api(time_max, "time_max") or time_max
+
+    # Build FreeBusy query
+    freebusy_body: Dict[str, Any] = {
+        "timeMin": formatted_time_min,
+        "timeMax": formatted_time_max,
+        "items": [{"id": cal_id} for cal_id in calendar_ids],
+    }
+    if timezone:
+        freebusy_body["timeZone"] = timezone
+
+    freebusy_response = await asyncio.to_thread(
+        lambda: service.freebusy().query(body=freebusy_body).execute()
+    )
+
+    # Collect all busy intervals from all requested calendars
+    all_busy: List[Dict[str, str]] = []
+    calendars_data = freebusy_response.get("calendars", {})
+    for cal_id in calendar_ids:
+        cal_info = calendars_data.get(cal_id, {})
+        all_busy.extend(cal_info.get("busy", []))
+
+    # Merge overlapping busy intervals and compute free slots
+    merged_busy = _merge_busy_intervals(all_busy)
+    free_slots = _find_free_slots(merged_busy, formatted_time_min, formatted_time_max, min_duration)
+
+    logger.info(f"[find_my_free_time] Found {len(free_slots)} free slots for {user_google_email}")
+    return success_response({
+        "timeRange": {"start": formatted_time_min, "end": formatted_time_max, "timeZone": timezone},
+        "freeSlots": free_slots,
+        "totalFreeSlots": len(free_slots),
+    })
+
+
+# ---------------------------------------------------------------------------
+# New tool: find_meeting_times
+# ---------------------------------------------------------------------------
+
+@server.tool()
+@handle_http_errors("find_meeting_times", is_read_only=True, service_type="calendar")
+@require_google_service("calendar", "calendar_read")
+async def find_meeting_times(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    attendees: List[str] = Field(..., description="List of email addresses to check availability for. The authenticated user is automatically included."),
+    duration: int = Field(..., description="Required meeting duration in minutes (e.g., 30, 60, 90)."),
+    time_min: str = Field(..., description="Start of search range in RFC3339 format (e.g., '2024-05-12T00:00:00Z')."),
+    time_max: str = Field(..., description="End of search range in RFC3339 format (e.g., '2024-05-19T23:59:59Z')."),
+    timezone: Optional[str] = Field(None, description="IANA timezone for interpreting times and displaying results (e.g., 'America/New_York')."),
+    start_hour: int = Field(9, description="Earliest hour to start meetings (0-23). Default: 9."),
+    end_hour: int = Field(17, description="Latest hour to end meetings (0-23). Default: 17."),
+    exclude_weekends: bool = Field(True, description="Skip Saturday and Sunday. Default: True."),
+    max_results: int = Field(5, description="Maximum number of available slots to return. Default: 5."),
+) -> str:
+    """
+    Finds optimal meeting times when all specified attendees are available.
+
+    Uses Google's FreeBusy API to check multiple calendars simultaneously and
+    identify time slots where all attendees can meet. Results respect business
+    hours and exclude weekends by default.
+
+    Returns:
+        str: Available meeting time slots with details.
+    """
+    logger.info(f"[find_meeting_times] Invoked. Email: '{user_google_email}', Attendees: {attendees}, Duration: {duration}min")
+
+    formatted_time_min = _correct_time_format_for_api(time_min, "time_min") or time_min
+    formatted_time_max = _correct_time_format_for_api(time_max, "time_max") or time_max
+
+    # Ensure the authenticated user is included
+    all_attendees = list(set(attendees + [user_google_email]))
+
+    # Build FreeBusy query
+    freebusy_body: Dict[str, Any] = {
+        "timeMin": formatted_time_min,
+        "timeMax": formatted_time_max,
+        "items": [{"id": email} for email in all_attendees],
+    }
+    if timezone:
+        freebusy_body["timeZone"] = timezone
+
+    freebusy_response = await asyncio.to_thread(
+        lambda: service.freebusy().query(body=freebusy_body).execute()
+    )
+
+    # Collect all busy intervals from all attendees
+    all_busy: List[Dict[str, str]] = []
+    calendars_data = freebusy_response.get("calendars", {})
+    for email in all_attendees:
+        cal_info = calendars_data.get(email, {})
+        all_busy.extend(cal_info.get("busy", []))
+
+    # Merge all busy intervals
+    merged_busy = _merge_busy_intervals(all_busy)
+
+    # Compute free slots across the entire range
+    free_slots = _find_free_slots(merged_busy, formatted_time_min, formatted_time_max, duration)
+
+    # Resolve the display/working timezone once. All wall-clock snapping
+    # (start_hour, end_hour, weekday) must happen in this tz, otherwise
+    # `.replace(hour=...)` on a UTC datetime sets the UTC hour rather than
+    # the intended local hour — producing wrong slots or an infinite loop.
+    if timezone:
+        try:
+            import zoneinfo
+            tz = zoneinfo.ZoneInfo(timezone)
+        except Exception:
+            tz = datetime.timezone.utc
+    else:
+        tz = datetime.timezone.utc
+
+    def _snap_to_start_hour(dt_utc: datetime.datetime) -> datetime.datetime:
+        """Snap a UTC datetime to `start_hour` on the same local day."""
+        local = dt_utc.astimezone(tz).replace(
+            hour=start_hour, minute=0, second=0, microsecond=0
+        )
+        return local.astimezone(datetime.timezone.utc)
+
+    def _advance_local_days(dt_utc: datetime.datetime, days: int) -> datetime.datetime:
+        """Advance a UTC datetime by N local days, snapping to local start_hour."""
+        local = dt_utc.astimezone(tz) + datetime.timedelta(days=days)
+        local = local.replace(hour=start_hour, minute=0, second=0, microsecond=0)
+        return local.astimezone(datetime.timezone.utc)
+
+    # Filter by business hours and weekday preferences
+    meeting_duration = datetime.timedelta(minutes=duration)
+    available_slots: List[Dict[str, Any]] = []
+
+    for slot in free_slots:
+        slot_start_str = slot["start"].replace("Z", "+00:00")
+        slot_end_str = slot["end"].replace("Z", "+00:00")
+        slot_start = datetime.datetime.fromisoformat(slot_start_str)
+        slot_end = datetime.datetime.fromisoformat(slot_end_str)
+
+        # Generate candidate meeting slots within this free window
+        candidate = slot_start
+        while candidate + meeting_duration <= slot_end and len(available_slots) < max_results:
+            candidate_local = candidate.astimezone(tz)
+            prev_candidate = candidate
+
+            # Check weekday
+            if exclude_weekends and candidate_local.weekday() >= 5:
+                days_until_monday = 7 - candidate_local.weekday()
+                candidate = _advance_local_days(candidate, days_until_monday)
+                if candidate <= prev_candidate:
+                    break
+                continue
+
+            # Check business hours
+            if candidate_local.hour < start_hour:
+                candidate = _snap_to_start_hour(candidate)
+                if candidate <= prev_candidate:
+                    break
+                continue
+            if candidate_local.hour >= end_hour:
+                candidate = _advance_local_days(candidate, 1)
+                if candidate <= prev_candidate:
+                    break
+                continue
+
+            # Check the meeting would end within business hours
+            candidate_end = candidate + meeting_duration
+            candidate_end_local = candidate_end.astimezone(tz)
+
+            if candidate_end_local.hour > end_hour or (
+                candidate_end_local.hour == end_hour and candidate_end_local.minute > 0
+            ):
+                candidate = _advance_local_days(candidate, 1)
+                if candidate <= prev_candidate:
+                    break
+                continue
+
+            available_slots.append({
+                "start": candidate.isoformat(),
+                "end": candidate_end.isoformat(),
+                "duration_minutes": duration,
+            })
+
+            # Move to next 15-minute increment
+            candidate = candidate + datetime.timedelta(minutes=15)
+
+        if len(available_slots) >= max_results:
+            break
+
+    logger.info(f"[find_meeting_times] Found {len(available_slots)} available slots for {len(all_attendees)} attendees")
+    return success_response({
+        "availableSlots": available_slots,
+        "totalSlots": len(available_slots),
+        "attendees": all_attendees,
+        "duration_minutes": duration,
+        "preferences": {
+            "startHour": start_hour,
+            "endHour": end_hour,
+            "excludeWeekends": exclude_weekends,
+        },
+        "timeRange": {"start": formatted_time_min, "end": formatted_time_max, "timeZone": timezone},
+    })
