@@ -7,15 +7,88 @@ import logging
 import asyncio
 from typing import Optional, Dict, Any, List
 
-from googleapiclient.errors import HttpError
 from pydantic import Field
+from googleapiclient.errors import HttpError
 
-from auth.service_decorator import require_google_service
+from auth.service_decorator import require_google_service, require_multiple_services
 from core.server import server
 from core.utils import handle_http_errors
 from core.response import success_response
 
 logger = logging.getLogger(__name__)
+
+# In-memory cache for user ID → display name (bounded to avoid unbounded growth)
+_SENDER_CACHE_MAX_SIZE = 256
+_sender_name_cache: Dict[str, str] = {}
+
+
+def _cache_sender(user_id: str, name: str) -> None:
+    """Store a resolved sender name, evicting oldest entries if cache is full."""
+    if len(_sender_name_cache) >= _SENDER_CACHE_MAX_SIZE:
+        to_remove = list(_sender_name_cache.keys())[: _SENDER_CACHE_MAX_SIZE // 2]
+        for k in to_remove:
+            del _sender_name_cache[k]
+    _sender_name_cache[user_id] = name
+
+
+async def _resolve_sender(people_service, sender_obj: Dict[str, Any]) -> str:
+    """Resolve a Chat message sender to a display name.
+
+    Fast path: use displayName if the API already provided it.
+    Slow path: look up the user via People API people.get and cache the result.
+    Falls back to email, then raw user_id when nothing else is available.
+    """
+    display_name = sender_obj.get("displayName")
+    if display_name:
+        return display_name
+
+    user_id = sender_obj.get("name", "")
+    if not user_id:
+        return "Unknown Sender"
+
+    if user_id in _sender_name_cache:
+        return _sender_name_cache[user_id]
+
+    people_resource = user_id.replace("users/", "people/", 1)
+    if people_service:
+        try:
+            person = await asyncio.to_thread(
+                people_service.people()
+                .get(resourceName=people_resource, personFields="names,emailAddresses")
+                .execute
+            )
+            names = person.get("names", [])
+            if names:
+                resolved = names[0].get("displayName", user_id)
+                _cache_sender(user_id, resolved)
+                return resolved
+            emails = person.get("emailAddresses", [])
+            if emails:
+                resolved = emails[0].get("value", user_id)
+                _cache_sender(user_id, resolved)
+                return resolved
+        except HttpError as e:
+            logger.debug(f"People API lookup failed for {user_id}: {e}")
+        except Exception as e:
+            logger.debug(f"Unexpected error resolving {user_id}: {e}")
+
+    _cache_sender(user_id, user_id)
+    return user_id
+
+
+async def _resolve_senders_batch(people_service, senders: List[Dict[str, Any]]) -> Dict[str, str]:
+    """Dedupe sender_id list + resolve serially (httplib2 is not thread-safe). Returns {sender_id: name}."""
+    unique: Dict[str, Dict[str, Any]] = {}
+    for s in senders:
+        sid = s.get("name")
+        if sid and sid not in unique:
+            unique[sid] = s
+    if not unique:
+        return {}
+    result_map: Dict[str, str] = {}
+    for sid, sender_obj in unique.items():
+        result_map[sid] = await _resolve_sender(people_service, sender_obj)
+    return result_map
 
 
 def _map_space(raw: Dict[str, Any], compact: bool = False) -> Dict[str, Any]:
@@ -36,12 +109,18 @@ def _map_space(raw: Dict[str, Any], compact: bool = False) -> Dict[str, Any]:
     return result
 
 
-def _map_chat_message(raw: Dict[str, Any], compact: bool = False) -> Dict[str, Any]:
+def _map_chat_message(
+    raw: Dict[str, Any],
+    compact: bool = False,
+    sender_name_map: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
     """Map a raw Chat API message to a clean response shape."""
     sender = raw.get("sender", {})
+    sender_id = sender.get("name")
+    resolved_name = (sender_name_map or {}).get(sender_id) if sender_id else None
     result = {
         "id": raw.get("name"),
-        "sender": sender.get("displayName"),
+        "sender": sender.get("displayName") or resolved_name,
         "sender_type": sender.get("type"),
         "text": raw.get("text"),
         "thread_name": raw.get("thread", {}).get("name"),
@@ -64,12 +143,17 @@ def _map_chat_message(raw: Dict[str, Any], compact: bool = False) -> Dict[str, A
     return result
 
 
-def _map_member(raw: Dict[str, Any]) -> Dict[str, Any]:
+def _map_member(
+    raw: Dict[str, Any],
+    sender_name_map: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
     """Map a raw Chat API membership to a clean response shape."""
     member = raw.get("member", {})
+    member_id = member.get("name")
+    resolved_name = (sender_name_map or {}).get(member_id) if member_id else None
     return {
         "id": raw.get("name"),
-        "name": member.get("displayName"),
+        "name": member.get("displayName") or resolved_name,
         "email": member.get("email"),
         "type": member.get("type"),
         "role": raw.get("role"),
@@ -97,9 +181,9 @@ async def list_spaces(
 
     filter_param = None
     if space_type == "room":
-        filter_param = "spaceType = SPACE"
+        filter_param = 'spaceType = "SPACE"'
     elif space_type == "dm":
-        filter_param = "spaceType = DIRECT_MESSAGE"
+        filter_param = 'spaceType = "DIRECT_MESSAGE"'
 
     request_params = {"pageSize": page_size}
     if filter_param:
@@ -147,9 +231,13 @@ async def get_space(
 
 @server.tool()
 @handle_http_errors("get_messages", service_type="chat", is_read_only=True)
-@require_google_service("chat", "chat_read")
+@require_multiple_services([
+    {"service_type": "chat", "scopes": "chat_read", "param_name": "chat_service"},
+    {"service_type": "people", "scopes": "contacts_read", "param_name": "people_service"},
+])
 async def get_messages(
-    service,
+    chat_service,
+    people_service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     space_id: str = Field(..., description="The ID of the Google Chat space to retrieve messages from. Use the FULL ID exactly from list_spaces - do NOT truncate or modify it."),
     page_size: int = Field(25, description="Maximum number of messages to return. Defaults to 25, maximum is 1000."),
@@ -176,13 +264,16 @@ async def get_messages(
         request_params["showDeleted"] = show_deleted
 
     response = await asyncio.to_thread(
-        service.spaces().messages().list(**request_params).execute
+        chat_service.spaces().messages().list(**request_params).execute
     )
 
     messages = response.get('messages', [])
     next_page_token = response.get('nextPageToken')
 
-    mapped = [_map_chat_message(m, compact=True) for m in messages]
+    senders = [m.get("sender", {}) for m in messages if m.get("sender", {}).get("name")]
+    sender_name_map = await _resolve_senders_batch(people_service, senders)
+
+    mapped = [_map_chat_message(m, compact=True, sender_name_map=sender_name_map) for m in messages]
     data = {"messages": mapped, "count": len(mapped)}
     if next_page_token:
         data["next_page_token"] = next_page_token
@@ -192,9 +283,13 @@ async def get_messages(
 
 @server.tool()
 @handle_http_errors("get_message", service_type="chat", is_read_only=True)
-@require_google_service("chat", "chat_read")
+@require_multiple_services([
+    {"service_type": "chat", "scopes": "chat_read", "param_name": "chat_service"},
+    {"service_type": "people", "scopes": "contacts_read", "param_name": "people_service"},
+])
 async def get_message(
-    service,
+    chat_service,
+    people_service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     message_id: str = Field(..., description="The full resource name of the message (e.g. 'spaces/AAAA1234/messages/msg1'). Use the FULL ID exactly from get_messages - do NOT truncate or modify it."),
 ) -> str:
@@ -207,10 +302,16 @@ async def get_message(
     logger.info(f"[get_message] Message ID: '{message_id}' for user '{user_google_email}'")
 
     message = await asyncio.to_thread(
-        service.spaces().messages().get(name=message_id).execute
+        chat_service.spaces().messages().get(name=message_id).execute
     )
 
-    return success_response(_map_chat_message(message, compact=False))
+    sender_obj = message.get("sender", {})
+    sender_name_map = {}
+    if sender_obj.get("name"):
+        resolved = await _resolve_sender(people_service, sender_obj)
+        sender_name_map[sender_obj["name"]] = resolved
+
+    return success_response(_map_chat_message(message, compact=False, sender_name_map=sender_name_map))
 
 
 @server.tool()
@@ -313,9 +414,13 @@ async def delete_message(
 
 @server.tool()
 @handle_http_errors("search_messages", service_type="chat", is_read_only=True)
-@require_google_service("chat", "chat_read")
+@require_multiple_services([
+    {"service_type": "chat", "scopes": "chat_read", "param_name": "chat_service"},
+    {"service_type": "people", "scopes": "contacts_read", "param_name": "people_service"},
+])
 async def search_messages(
-    service,
+    chat_service,
+    people_service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     space_id: str = Field(..., description="The ID of the Google Chat space to search within. Use the FULL ID exactly from list_spaces - do NOT truncate or modify it."),
     query: Optional[str] = Field(None, description="Text to search for in message content. Messages are fetched using API-supported filters, then filtered client-side by this text query."),
@@ -356,7 +461,7 @@ async def search_messages(
         request_params["pageToken"] = page_token
 
     response = await asyncio.to_thread(
-        service.spaces().messages().list(**request_params).execute
+        chat_service.spaces().messages().list(**request_params).execute
     )
 
     messages = response.get('messages', [])
@@ -370,7 +475,10 @@ async def search_messages(
             if m.get("text") and query_lower in m["text"].lower()
         ]
 
-    mapped = [_map_chat_message(m, compact=True) for m in messages]
+    senders = [m.get("sender", {}) for m in messages if m.get("sender", {}).get("name")]
+    sender_name_map = await _resolve_senders_batch(people_service, senders)
+
+    mapped = [_map_chat_message(m, compact=True, sender_name_map=sender_name_map) for m in messages]
     data = {"messages": mapped, "count": len(mapped)}
     if next_page_token:
         data["next_page_token"] = next_page_token
@@ -380,9 +488,13 @@ async def search_messages(
 
 @server.tool()
 @handle_http_errors("list_members", service_type="chat", is_read_only=True)
-@require_google_service("chat", "chat_memberships_read")
+@require_multiple_services([
+    {"service_type": "chat", "scopes": "chat_memberships_read", "param_name": "chat_service"},
+    {"service_type": "people", "scopes": "contacts_read", "param_name": "people_service"},
+])
 async def list_members(
-    service,
+    chat_service,
+    people_service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     space_id: str = Field(..., description="The ID of the Google Chat space. Use the FULL ID exactly from list_spaces - do NOT truncate or modify it."),
     page_size: int = Field(100, description="Maximum number of members to return. Defaults to 100, maximum is 1000."),
@@ -394,8 +506,12 @@ async def list_members(
     """
     Lists members of a Google Chat space.
 
+    Under user OAuth, Chat API only returns {id, type, role} per member. Names are enriched
+    via People API for users in the caller's contact graph (self, personal contacts, domain
+    contacts, other contacts). Members outside that graph fall back to raw user IDs.
+
     Returns:
-        str: List of space members with their names, emails, roles, and types.
+        str: List of space members with resolved names where available, emails, roles, and types.
     """
     logger.info(f"[list_members] Space ID: '{space_id}' for user '{user_google_email}'")
 
@@ -410,13 +526,19 @@ async def list_members(
         request_params["showInvited"] = show_invited
 
     response = await asyncio.to_thread(
-        service.spaces().members().list(**request_params).execute
+        chat_service.spaces().members().list(**request_params).execute
     )
 
     members = response.get('memberships', [])
     next_page_token = response.get('nextPageToken')
 
-    mapped = [_map_member(m) for m in members]
+    member_objs = [
+        m.get("member", {}) for m in members
+        if m.get("member", {}).get("type") == "HUMAN" and m.get("member", {}).get("name")
+    ]
+    sender_name_map = await _resolve_senders_batch(people_service, member_objs)
+
+    mapped = [_map_member(m, sender_name_map=sender_name_map) for m in members]
     data = {"members": mapped, "count": len(mapped)}
     if next_page_token:
         data["next_page_token"] = next_page_token

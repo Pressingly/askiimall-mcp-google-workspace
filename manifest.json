@@ -50,7 +50,7 @@
     {
       "name": "google_drive",
       "display_name": "Google Drive",
-      "description": "Manage Google Drive through AI with full search, list and create capability",
+      "description": "Manage Google Drive through AI with full CRUD, search, share, move, copy, and shared drive support",
       "category": "storage"
     },
     {
