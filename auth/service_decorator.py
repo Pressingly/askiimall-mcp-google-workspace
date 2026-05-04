@@ -30,6 +30,7 @@ from auth.scopes import (
     CHAT_WRITE_SCOPE,
     CHAT_SPACES_SCOPE,
     CHAT_MEMBERSHIPS_READONLY_SCOPE,
+    CONTACTS_READONLY_SCOPE,
     FORMS_BODY_SCOPE,
     FORMS_BODY_READONLY_SCOPE,
     FORMS_RESPONSES_READONLY_SCOPE,
@@ -285,6 +286,7 @@ SERVICE_CONFIGS = {
     "slides": {"service": "slides", "version": "v1"},
     "tasks": {"service": "tasks", "version": "v1"},
     "customsearch": {"service": "customsearch", "version": "v1"},
+    "people": {"service": "people", "version": "v1"},
 }
 
 
@@ -314,6 +316,8 @@ SCOPE_GROUPS = {
     "chat_write": CHAT_WRITE_SCOPE,
     "chat_spaces": CHAT_SPACES_SCOPE,
     "chat_memberships_read": CHAT_MEMBERSHIPS_READONLY_SCOPE,
+    # People API (used by Chat tools to resolve sender names)
+    "contacts_read": CONTACTS_READONLY_SCOPE,
     # Forms scopes
     "forms": FORMS_BODY_SCOPE,
     "forms_read": FORMS_BODY_READONLY_SCOPE,
