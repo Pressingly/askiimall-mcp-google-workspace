@@ -68,7 +68,7 @@
     {
       "name": "google_sheets",
       "display_name": "Google Sheets",
-      "description": "Manage Google Sheets through AI with support for read, write, modify and create",
+      "description": "Manage Google Sheets through AI with support for read, write, modify, create, format, conditional formatting, structured tables, dimensions, merge, data validation, and named ranges",
       "category": "productivity"
     },
     {
