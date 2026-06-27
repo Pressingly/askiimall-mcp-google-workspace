@@ -27,6 +27,27 @@ def _map_task_list(raw: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _map_assignment_info(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Map a raw Tasks API assignmentInfo object to a clean response shape.
+
+    Output-only. Present on tasks assigned to the user from another Google
+    surface (Google Docs or a Google Chat space). Returns None when absent.
+    """
+    info = raw.get("assignmentInfo")
+    if not info:
+        return None
+    mapped = {}
+    if info.get("surfaceType"):
+        mapped["surface_type"] = info["surfaceType"]
+    if info.get("driveResourceInfo"):
+        mapped["drive_resource_info"] = info["driveResourceInfo"]
+    if info.get("spaceInfo"):
+        mapped["space_info"] = info["spaceInfo"]
+    if info.get("linkToTask"):
+        mapped["link_to_task"] = info["linkToTask"]
+    return mapped or None
+
+
 def _map_task(raw: Dict[str, Any], compact: bool = False) -> Dict[str, Any]:
     """Map a raw Tasks API task to a clean response shape."""
     result = {
@@ -42,9 +63,20 @@ def _map_task(raw: Dict[str, Any], compact: bool = False) -> Dict[str, Any]:
         result["parent"] = raw.get("parent")
         result["position"] = raw.get("position")
         result["link"] = raw.get("webViewLink")
+        if raw.get("deleted"):
+            result["deleted"] = raw["deleted"]
+        if raw.get("hidden"):
+            result["hidden"] = raw["hidden"]
+        if raw.get("links"):
+            result["links"] = raw["links"]
+        assignment_info = _map_assignment_info(raw)
+        if assignment_info:
+            result["assignment_info"] = assignment_info
     else:
         if raw.get("due"):
             result["due"] = raw["due"]
+        if raw.get("assignmentInfo"):
+            result["assigned"] = True
     return result
 
 
@@ -153,7 +185,7 @@ async def update_task_list(
     logger.info(f"[update_task_list] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}, New Title: '{title}'")
 
     result = await asyncio.to_thread(
-        service.tasklists().update(tasklist=task_list_id, body={"id": task_list_id, "title": title}).execute
+        service.tasklists().patch(tasklist=task_list_id, body={"title": title}).execute
     )
 
     logger.info(f"Updated task list {task_list_id} with new title '{title}' for {user_google_email}")
@@ -286,6 +318,7 @@ async def create_task(
     title: str = Field(..., description="The title of the task."),
     notes: Optional[str] = Field(None, description="Notes or description for the task."),
     due: Optional[str] = Field(None, description="Due date in RFC 3339 timestamp format (e.g., '2024-12-31T23:59:59Z' or '2024-12-31')."),
+    status: Optional[str] = Field(None, description="Initial status for the task. Options: 'needsAction' (default) or 'completed'. When set to 'completed', the API automatically stamps the completion time."),
     parent: Optional[str] = Field(None, description="Parent task ID to make this task a subtask. Obtain the parent task ID from list_tasks results."),
     previous: Optional[str] = Field(None, description="Previous sibling task ID for positioning. The new task will be inserted after this task. Obtain the previous task ID from list_tasks results."),
 ) -> str:
@@ -302,6 +335,8 @@ async def create_task(
         body["notes"] = notes
     if due:
         body["due"] = due
+    if status:
+        body["status"] = status
 
     params = {"tasklist": task_list_id, "body": body}
     if parent:
@@ -338,29 +373,27 @@ async def update_task(
     """
     logger.info(f"[update_task] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}, Task ID: {task_id}")
 
-    # First get the current task to build the update body
-    current_task = await asyncio.to_thread(
-        service.tasks().get(tasklist=task_list_id, task=task_id).execute
-    )
-
-    body = {
-        "id": task_id,
-        "title": title if title is not None else current_task.get("title", ""),
-        "status": status if status is not None else current_task.get("status", "needsAction")
-    }
-
+    # Build a partial-update body containing only the caller-provided fields.
+    # patch() leaves any omitted field unchanged, so no read-modify-write needed.
+    body: Dict[str, Any] = {}
+    if title is not None:
+        body["title"] = title
     if notes is not None:
         body["notes"] = notes
-    elif current_task.get("notes"):
-        body["notes"] = current_task["notes"]
-
+    if status is not None:
+        body["status"] = status
     if due is not None:
         body["due"] = due
-    elif current_task.get("due"):
-        body["due"] = current_task["due"]
+
+    if not body:
+        return success_response({
+            "task_id": task_id,
+            "updated": False,
+            "message": "No fields provided to update.",
+        })
 
     result = await asyncio.to_thread(
-        service.tasks().update(tasklist=task_list_id, task=task_id, body=body).execute
+        service.tasks().patch(tasklist=task_list_id, task=task_id, body=body).execute
     )
 
     logger.info(f"Updated task {task_id} for {user_google_email}")
