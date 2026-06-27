@@ -535,6 +535,7 @@ When calling a tool:
 |------|-------------|
 | `create_form` | Create new forms with title and description |
 | `get_form` | Retrieve form details, questions, and URLs |
+| `add_question` | Add a question (choice, text, scale, date, or time) to a form |
 | `set_publish_settings` | Configure form template and authentication settings |
 | `get_form_response` | Get individual form response details |
 | `list_form_responses` | List all responses to a form with pagination |
