@@ -80,7 +80,7 @@
     {
       "name": "google_forms",
       "display_name": "Google Forms",
-      "description": "Manage Google Forms through AI with support for creation, retrieval, publishing, response management and more",
+      "description": "Manage Google Forms through AI with support for creation, adding questions, retrieval, publishing, response management and more",
       "category": "productivity"
     },
     {
