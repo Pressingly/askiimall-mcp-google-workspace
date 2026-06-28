@@ -1223,7 +1223,21 @@ async def style_doc_table_cells(
     if not style_options:
         return "Error: At least one styling parameter must be provided (border_width, border_color, background_color, or header_background)."
 
-    requests = build_table_style_requests(table_start_index, style_options)
+    # Resolve the table's column count so header styling stays within bounds.
+    num_columns = None
+    if 'header_background' in style_options:
+        doc = await asyncio.to_thread(
+            service.documents().get(documentId=document_id).execute
+        )
+        tables = find_tables(doc)
+        match = next(
+            (t for t in tables if t.get('start_index') == table_start_index),
+            tables[0] if tables else None,
+        )
+        if match:
+            num_columns = match.get('columns')
+
+    requests = build_table_style_requests(table_start_index, style_options, num_columns)
 
     if not requests:
         return "Error: Could not build style requests from the provided parameters."

@@ -1966,6 +1966,456 @@ async def manage_named_range(
     )
 
 
+def _coerce_list(value, what: str):
+    """Accept a real list or a JSON-encoded list string; raise on neither."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise UserInputError(f"{what} must be a list or JSON array, got '{value}'.") from exc
+    if not isinstance(value, list):
+        raise UserInputError(f"{what} must be a list.")
+    return value
+
+
+@server.tool()
+@handle_http_errors("sort_range", service_type="sheets")
+@require_google_service("sheets", "sheets_write")
+async def sort_range(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet."),
+    range_name: str = Field(
+        ...,
+        description="A1 range of the data rows to sort, e.g. 'Sheet1!A2:C50'. Exclude the header row.",
+    ),
+    sort_specs: Union[str, List[Dict[str, Any]]] = Field(
+        ...,
+        description="List of sort keys, applied in order. Each is {\"column\": <0-based index within the range>, \"order\": \"ASCENDING\"|\"DESCENDING\"}. A JSON-encoded list is accepted.",
+    ),
+) -> str:
+    """
+    Sort the rows of a range by one or more columns.
+    """
+    logger.info(
+        f"[sort_range] Invoked. Email: '{user_google_email}', Spreadsheet: {spreadsheet_id}, Range: {range_name}"
+    )
+
+    metadata = await asyncio.to_thread(
+        service.spreadsheets()
+        .get(spreadsheetId=spreadsheet_id, fields="sheets(properties(sheetId,title))")
+        .execute
+    )
+    grid_range = _parse_a1_range(range_name, metadata.get("sheets", []))
+
+    specs = _coerce_list(sort_specs, "sort_specs")
+    if not specs:
+        raise UserInputError("sort_specs must contain at least one {column, order} entry.")
+    start_col = grid_range.get("startColumnIndex", 0)
+    api_specs = []
+    for spec in specs:
+        if not isinstance(spec, dict) or "column" not in spec:
+            raise UserInputError("Each sort spec needs a 'column' key (0-based within the range).")
+        order = str(spec.get("order", "ASCENDING")).upper()
+        if order not in {"ASCENDING", "DESCENDING"}:
+            raise UserInputError("order must be 'ASCENDING' or 'DESCENDING'.")
+        api_specs.append(
+            {"dimensionIndex": start_col + int(spec["column"]), "sortOrder": order}
+        )
+
+    request = {"sortRange": {"range": grid_range, "sortSpecs": api_specs}}
+    await asyncio.to_thread(
+        service.spreadsheets()
+        .batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": [request]})
+        .execute
+    )
+
+    return success_response(
+        {
+            "spreadsheet_id": spreadsheet_id,
+            "range": range_name,
+            "operation": "sort",
+            "sort_specs": api_specs,
+        }
+    )
+
+
+@server.tool()
+@handle_http_errors("set_basic_filter", service_type="sheets")
+@require_google_service("sheets", "sheets_write")
+async def set_basic_filter(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet."),
+    range_name: Optional[str] = Field(
+        None,
+        description="A1 range to apply the filter over (include the header row), e.g. 'Sheet1!A1:C50'. Required unless clear=True.",
+    ),
+    clear: bool = Field(
+        False, description="If True, remove the basic filter from the sheet instead of setting one."
+    ),
+    sheet_name: Optional[str] = Field(
+        None,
+        description="Sheet to clear the filter from when clear=True and range_name is omitted. Defaults to the first sheet.",
+    ),
+) -> str:
+    """
+    Add or remove a basic filter (the filter/sort UI on a header range).
+    """
+    logger.info(
+        f"[set_basic_filter] Invoked. Email: '{user_google_email}', Spreadsheet: {spreadsheet_id}, clear={clear}"
+    )
+
+    metadata = await asyncio.to_thread(
+        service.spreadsheets()
+        .get(spreadsheetId=spreadsheet_id, fields="sheets(properties(sheetId,title))")
+        .execute
+    )
+    sheets = metadata.get("sheets", [])
+
+    if clear:
+        if range_name:
+            sheet_id = _parse_a1_range(range_name, sheets)["sheetId"]
+        else:
+            sheet_id = _select_sheet(sheets, sheet_name)["properties"]["sheetId"]
+        request = {"clearBasicFilter": {"sheetId": sheet_id}}
+        operation = "clear"
+    else:
+        if not range_name:
+            raise UserInputError("range_name is required unless clear=True.")
+        grid_range = _parse_a1_range(range_name, sheets)
+        request = {"setBasicFilter": {"filter": {"range": grid_range}}}
+        operation = "set"
+
+    await asyncio.to_thread(
+        service.spreadsheets()
+        .batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": [request]})
+        .execute
+    )
+
+    return success_response(
+        {"spreadsheet_id": spreadsheet_id, "range": range_name, "operation": operation}
+    )
+
+
+_BORDER_STYLES = {"DOTTED", "DASHED", "SOLID", "SOLID_MEDIUM", "SOLID_THICK", "NONE", "DOUBLE"}
+
+
+@server.tool()
+@handle_http_errors("update_borders", service_type="sheets")
+@require_google_service("sheets", "sheets_write")
+async def update_borders(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet."),
+    range_name: str = Field(
+        ..., description="A1 range to apply borders to, e.g. 'Sheet1!A1:C10'."
+    ),
+    style: str = Field(
+        "SOLID",
+        description="Border line style: DOTTED, DASHED, SOLID, SOLID_MEDIUM, SOLID_THICK, DOUBLE, or NONE (to clear).",
+    ),
+    color: Optional[str] = Field(
+        "#000000", description="Border color as hex #RRGGBB."
+    ),
+    apply_to: str = Field(
+        "ALL",
+        description="Which edges: ALL (outer+inner grid), OUTER (perimeter only), INNER (grid lines only), or one of TOP, BOTTOM, LEFT, RIGHT.",
+    ),
+) -> str:
+    """
+    Apply or clear cell borders on a range.
+    """
+    logger.info(
+        f"[update_borders] Invoked. Email: '{user_google_email}', Spreadsheet: {spreadsheet_id}, Range: {range_name}, style={style}, apply_to={apply_to}"
+    )
+
+    style_normalized = style.upper()
+    if style_normalized not in _BORDER_STYLES:
+        raise UserInputError(f"style must be one of {sorted(_BORDER_STYLES)}.")
+    selection = apply_to.upper()
+    valid_selection = {"ALL", "OUTER", "INNER", "TOP", "BOTTOM", "LEFT", "RIGHT"}
+    if selection not in valid_selection:
+        raise UserInputError(f"apply_to must be one of {sorted(valid_selection)}.")
+
+    metadata = await asyncio.to_thread(
+        service.spreadsheets()
+        .get(spreadsheetId=spreadsheet_id, fields="sheets(properties(sheetId,title))")
+        .execute
+    )
+    grid_range = _parse_a1_range(range_name, metadata.get("sheets", []))
+
+    border = {"style": style_normalized}
+    parsed_color = _parse_hex_color(color)
+    if parsed_color:
+        border["color"] = parsed_color
+
+    update = {"range": grid_range}
+    outer = {"top", "bottom", "left", "right"}
+    inner = {"innerHorizontal", "innerVertical"}
+    if selection == "ALL":
+        edges = outer | inner
+    elif selection == "OUTER":
+        edges = outer
+    elif selection == "INNER":
+        edges = inner
+    else:
+        edges = {selection.lower()}
+    for edge in edges:
+        update[edge] = copy.deepcopy(border)
+
+    await asyncio.to_thread(
+        service.spreadsheets()
+        .batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": [{"updateBorders": update}]})
+        .execute
+    )
+
+    return success_response(
+        {
+            "spreadsheet_id": spreadsheet_id,
+            "range": range_name,
+            "operation": "clear" if style_normalized == "NONE" else "set",
+            "style": style_normalized,
+            "apply_to": selection,
+        }
+    )
+
+
+@server.tool()
+@handle_http_errors("manage_protected_range", service_type="sheets")
+@require_google_service("sheets", "sheets_write")
+async def manage_protected_range(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet."),
+    action: str = Field(..., description="One of 'add' or 'delete'."),
+    range_name: Optional[str] = Field(
+        None, description="A1 range to protect, e.g. 'Sheet1!A1:C1'. Required for 'add'."
+    ),
+    protected_range_id: Optional[int] = Field(
+        None, description="The protectedRangeId to remove. Required for 'delete'."
+    ),
+    description: Optional[str] = Field(
+        None, description="Human-readable description of the protected range."
+    ),
+    warning_only: bool = Field(
+        False,
+        description="If True, edits show a warning but are allowed. If False, only listed editors may edit.",
+    ),
+    editors: Optional[Union[str, List[str]]] = Field(
+        None,
+        description="Emails allowed to edit when warning_only=False. A JSON-encoded list is accepted.",
+    ),
+) -> str:
+    """
+    Protect a range from edits, or remove an existing protection.
+    """
+    action_normalized = action.strip().lower()
+    if action_normalized not in {"add", "delete"}:
+        raise UserInputError("action must be 'add' or 'delete'.")
+
+    logger.info(
+        f"[manage_protected_range] action='{action_normalized}', email='{user_google_email}', spreadsheet={spreadsheet_id}"
+    )
+
+    if action_normalized == "delete":
+        if protected_range_id is None:
+            raise UserInputError("protected_range_id is required for action 'delete'.")
+        request = {"deleteProtectedRange": {"protectedRangeId": int(protected_range_id)}}
+        await asyncio.to_thread(
+            service.spreadsheets()
+            .batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": [request]})
+            .execute
+        )
+        return success_response(
+            {
+                "spreadsheet_id": spreadsheet_id,
+                "action": "delete",
+                "protected_range_id": int(protected_range_id),
+            }
+        )
+
+    if not range_name:
+        raise UserInputError("range_name is required for action 'add'.")
+    metadata = await asyncio.to_thread(
+        service.spreadsheets()
+        .get(spreadsheetId=spreadsheet_id, fields="sheets(properties(sheetId,title))")
+        .execute
+    )
+    grid_range = _parse_a1_range(range_name, metadata.get("sheets", []))
+
+    protected: Dict[str, Any] = {"range": grid_range, "warningOnly": warning_only}
+    if description:
+        protected["description"] = description
+    if not warning_only:
+        editor_emails = [str(e) for e in _coerce_list(editors, "editors")]
+        if editor_emails:
+            protected["editors"] = {"users": editor_emails}
+
+    response = await asyncio.to_thread(
+        service.spreadsheets()
+        .batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={"requests": [{"addProtectedRange": {"protectedRange": protected}}]},
+        )
+        .execute
+    )
+    new_id = (
+        response.get("replies", [{}])[0]
+        .get("addProtectedRange", {})
+        .get("protectedRange", {})
+        .get("protectedRangeId")
+    )
+
+    return success_response(
+        {
+            "spreadsheet_id": spreadsheet_id,
+            "action": "add",
+            "range": range_name,
+            "protected_range_id": new_id,
+            "warning_only": warning_only,
+        }
+    )
+
+
+@server.tool()
+@handle_http_errors("add_chart", service_type="sheets")
+@require_google_service("sheets", "sheets_write")
+async def add_chart(
+    service,
+    user_google_email: str = Field(..., description="The user's Google email address."),
+    spreadsheet_id: str = Field(..., description="The ID of the spreadsheet."),
+    data_range: str = Field(
+        ...,
+        description="A1 range of the source data including the header row and the label column, e.g. 'Sheet1!A1:C10'. The first column is the category/domain; remaining columns are series.",
+    ),
+    chart_type: str = Field(
+        "COLUMN",
+        description="Chart type: COLUMN, BAR, LINE, AREA, SCATTER, or PIE.",
+    ),
+    title: Optional[str] = Field(None, description="Optional chart title."),
+    anchor_cell: Optional[str] = Field(
+        None,
+        description="Top-left cell where the chart is placed, e.g. 'E2'. Defaults to one column to the right of the data.",
+    ),
+    has_headers: bool = Field(
+        True, description="Treat the first row of data_range as headers / series names."
+    ),
+) -> str:
+    """
+    Insert an embedded chart built from a contiguous data range.
+    """
+    logger.info(
+        f"[add_chart] Invoked. Email: '{user_google_email}', Spreadsheet: {spreadsheet_id}, type={chart_type}, data={data_range}"
+    )
+
+    ct = chart_type.upper()
+    basic_types = {"COLUMN", "BAR", "LINE", "AREA", "SCATTER"}
+    if ct not in basic_types and ct != "PIE":
+        raise UserInputError(f"chart_type must be one of {sorted(basic_types | {'PIE'})}.")
+
+    metadata = await asyncio.to_thread(
+        service.spreadsheets()
+        .get(spreadsheetId=spreadsheet_id, fields="sheets(properties(sheetId,title))")
+        .execute
+    )
+    sheets = metadata.get("sheets", [])
+    grid_range = _parse_a1_range(data_range, sheets)
+    sheet_id = grid_range["sheetId"]
+    start_col = grid_range["startColumnIndex"]
+    end_col = grid_range["endColumnIndex"]
+    if end_col - start_col < 2:
+        raise UserInputError(
+            "data_range needs at least 2 columns: a label column plus one or more series."
+        )
+
+    def _col_source(col_index: int) -> dict:
+        sub = dict(grid_range)
+        sub["startColumnIndex"] = col_index
+        sub["endColumnIndex"] = col_index + 1
+        return {"sourceRange": {"sources": [sub]}}
+
+    domain_source = _col_source(start_col)
+    series_sources = [_col_source(c) for c in range(start_col + 1, end_col)]
+    header_count = 1 if has_headers else 0
+
+    if ct == "PIE":
+        spec: Dict[str, Any] = {
+            "pieChart": {
+                "legendPosition": "RIGHT_LEGEND",
+                "domain": domain_source,
+                "series": series_sources[0],
+            }
+        }
+    else:
+        spec = {
+            "basicChart": {
+                "chartType": ct,
+                "legendPosition": "BOTTOM_LEGEND",
+                "headerCount": header_count,
+                "domains": [{"domain": domain_source}],
+                "series": [
+                    {"series": s, "targetAxis": "LEFT_AXIS"} for s in series_sources
+                ],
+            }
+        }
+    if title:
+        spec["title"] = title
+
+    if anchor_cell:
+        sheet_title = next(
+            (
+                s["properties"]["title"]
+                for s in sheets
+                if s.get("properties", {}).get("sheetId") == sheet_id
+            ),
+            None,
+        )
+        ref = f"'{sheet_title}'!{anchor_cell}" if sheet_title else anchor_cell
+        anchor = _parse_a1_range(ref, sheets)
+        anchor_row = anchor["startRowIndex"]
+        anchor_col = anchor["startColumnIndex"]
+    else:
+        anchor_row = grid_range["startRowIndex"]
+        anchor_col = end_col + 1
+
+    position = {
+        "overlayPosition": {
+            "anchorCell": {
+                "sheetId": sheet_id,
+                "rowIndex": anchor_row,
+                "columnIndex": anchor_col,
+            },
+            "widthPixels": 600,
+            "heightPixels": 371,
+        }
+    }
+
+    response = await asyncio.to_thread(
+        service.spreadsheets()
+        .batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={"requests": [{"addChart": {"chart": {"spec": spec, "position": position}}}]},
+        )
+        .execute
+    )
+    chart_id = (
+        response.get("replies", [{}])[0].get("addChart", {}).get("chart", {}).get("chartId")
+    )
+
+    return success_response(
+        {
+            "spreadsheet_id": spreadsheet_id,
+            "operation": "add_chart",
+            "chart_type": ct,
+            "chart_id": chart_id,
+            "data_range": data_range,
+        }
+    )
+
+
 # Create comment management tools for sheets
 _comment_tools = create_comment_tools("spreadsheet", "spreadsheet_id")
 

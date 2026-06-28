@@ -250,11 +250,12 @@ def create_table_with_data(
 
 def build_table_style_requests(
     table_start_index: int,
-    style_options: Dict[str, Any]
+    style_options: Dict[str, Any],
+    num_columns: Optional[int] = None
 ) -> List[Dict[str, Any]]:
     """
     Build requests to style a table.
-    
+
     Args:
         table_start_index: Starting index of the table
         style_options: Dictionary of style options
@@ -262,7 +263,9 @@ def build_table_style_requests(
             - border_color: RGB color for borders
             - background_color: RGB color for cell backgrounds
             - header_background: RGB color for header row background
-    
+        num_columns: Number of columns in the table. Used to bound the header-row
+            range; the Docs API rejects a columnSpan larger than the table.
+
     Returns:
         List of request dictionaries for styling
     """
@@ -315,7 +318,9 @@ def build_table_style_requests(
                         'columnIndex': 0
                     },
                     'rowSpan': 1,
-                    'columnSpan': 100  # Large number to cover all columns
+                    # Span the table's real column count; the API rejects a span
+                    # wider than the table (defaults to 1 if unknown).
+                    'columnSpan': num_columns if num_columns and num_columns > 0 else 1
                 },
                 'tableCellStyle': {
                     'backgroundColor': {

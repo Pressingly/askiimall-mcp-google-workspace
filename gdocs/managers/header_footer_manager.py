@@ -73,8 +73,10 @@ class HeaderFooterManager:
             if not target_section:
                 return False, f"No {section_type} found in document. Please create a {section_type} first in Google Docs."
             
-            # Update the content
-            success = await self._replace_section_content(document_id, target_section, content)
+            # Update the content (segment-scoped via section_id)
+            success = await self._replace_section_content(
+                document_id, target_section, content, section_id
+            )
             
             if success:
                 return True, f"Updated {section_type} content in document {document_id}"
@@ -148,50 +150,57 @@ class HeaderFooterManager:
         self,
         document_id: str,
         section: dict[str, Any],
-        new_content: str
+        new_content: str,
+        section_id: Optional[str] = None
     ) -> bool:
         """
         Replace the content in a header or footer section.
-        
+
         Args:
             document_id: Document ID
             section: Section data containing content elements
             new_content: New content to insert
-            
+            section_id: The header/footer segment ID. Header/footer indices are
+                segment-relative, so every request must carry this segmentId or it
+                would target the document body instead.
+
         Returns:
             True if successful, False otherwise
         """
         content_elements = section.get('content', [])
         if not content_elements:
             return False
-            
+
         # Find the first paragraph to replace content
         first_para = self._find_first_paragraph(content_elements)
         if not first_para:
             return False
-        
+
         # Calculate content range
         start_index = first_para.get('startIndex', 0)
         end_index = first_para.get('endIndex', 0)
-        
+
         # Build requests to replace content
         requests = []
-        
-        # Delete existing content if any (preserve paragraph structure)
-        if end_index > start_index:
-            requests.append({
-                'deleteContentRange': {
-                    'range': {
-                        'startIndex': start_index,
-                        'endIndex': end_index - 1  # Keep the paragraph end marker
-                    }
-                }
-            })
-        
-        # Insert new content
+
+        # Delete existing text only (keep the trailing paragraph end marker). A
+        # freshly created, empty section has no real text, so skip the delete.
+        if end_index - 1 > start_index:
+            delete_range = {
+                'startIndex': start_index,
+                'endIndex': end_index - 1
+            }
+            if section_id:
+                delete_range['segmentId'] = section_id
+            requests.append({'deleteContentRange': {'range': delete_range}})
+
+        # Insert new content at the start of the segment
+        location = {'index': start_index}
+        if section_id:
+            location['segmentId'] = section_id
         requests.append({
             'insertText': {
-                'location': {'index': start_index},
+                'location': location,
                 'text': new_content
             }
         })
