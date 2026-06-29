@@ -7,7 +7,7 @@ import logging
 import asyncio
 import io
 
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from pydantic import Field
 
 # Auth & server utilities
@@ -293,26 +293,52 @@ async def list_docs_in_folder(
 
 @server.tool()
 @handle_http_errors("create_doc", service_type="docs")
-@require_google_service("docs", "docs_write")
+@require_multiple_services([
+    {"service_type": "drive", "scopes": "drive_file", "param_name": "drive_service"},
+    {"service_type": "docs", "scopes": "docs_write", "param_name": "docs_service"},
+])
 async def create_doc(
-    service,
+    drive_service,
+    docs_service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     title: str = Field(..., description="The title of the new Google Doc."),
-    content: str = Field('', description="Optional initial content to insert into the document. If not provided, creates an empty document."),
+    content: str = Field('', description="Optional initial content. Markdown is supported and rendered to native Google Docs formatting (headings, bold/italic, lists, tables, links) by default."),
+    render_markdown: bool = Field(True, description="When True (default), Markdown in 'content' is rendered to native Docs formatting via Drive import. Set False to insert 'content' verbatim as plain text."),
 ) -> str:
     """
     Creates a new Google Doc and optionally inserts initial content.
 
+    With render_markdown=True (default), content is imported through Google Drive's
+    native Markdown conversion so '#', '**', '|' tables, '*' lists, etc. become real
+    Docs formatting instead of literal characters. With render_markdown=False (or no
+    content), the legacy plain-text insert is used.
+
     Returns:
         str: Confirmation message with document ID and link.
     """
-    logger.info(f"[create_doc] Invoked. Email: '{user_google_email}', Title='{title}'")
+    logger.info(f"[create_doc] Invoked. Email: '{user_google_email}', Title='{title}', render_markdown={render_markdown}, has_content={bool(content)}")
 
-    doc = await asyncio.to_thread(service.documents().create(body={'title': title}).execute)
-    doc_id = doc.get('documentId')
-    if content:
-        requests = [{'insertText': {'location': {'index': 1}, 'text': content}}]
-        await asyncio.to_thread(service.documents().batchUpdate(documentId=doc_id, body={'requests': requests}).execute)
+    if content and render_markdown:
+        # Drive converts an uploaded text/markdown file to a native Google Doc,
+        # rendering headings, bold/italic, lists, tables, and links.
+        media = MediaIoBaseUpload(
+            io.BytesIO(content.encode("utf-8")), mimetype="text/markdown", resumable=True
+        )
+        created = await asyncio.to_thread(
+            drive_service.files().create(
+                body={"name": title, "mimeType": "application/vnd.google-apps.document"},
+                media_body=media,
+                fields="id",
+            ).execute
+        )
+        doc_id = created.get("id")
+    else:
+        doc = await asyncio.to_thread(docs_service.documents().create(body={'title': title}).execute)
+        doc_id = doc.get('documentId')
+        if content:
+            requests = [{'insertText': {'location': {'index': 1}, 'text': content}}]
+            await asyncio.to_thread(docs_service.documents().batchUpdate(documentId=doc_id, body={'requests': requests}).execute)
+
     link = f"https://docs.google.com/document/d/{doc_id}/edit"
     logger.info(f"Successfully created Google Doc '{title}' (ID: {doc_id}) for {user_google_email}.")
     return success_response({"id": doc_id, "title": title, "link": link})

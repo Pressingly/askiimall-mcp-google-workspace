@@ -18,6 +18,24 @@ from core.response import success_response
 logger = logging.getLogger(__name__)
 
 
+def _normalize_due(due: Optional[str], end_of_day: bool = False) -> Optional[str]:
+    """
+    Tasks API datetime fields (`due`, and the list filters completedMin/Max,
+    dueMin/Max, updatedMin) require a full RFC3339 timestamp; a bare date like
+    '2026-06-30' is rejected with HTTP 400 (badRequest). Promote a date-only
+    value to a full timestamp so callers can pass either form.
+
+    end_of_day=True maps a bare date to 23:59:59.999Z (use for *Max upper
+    bounds so the whole day is included); otherwise midnight UTC.
+    """
+    if not due:
+        return due
+    d = due.strip()
+    if len(d) == 10 and d[4] == "-" and d[7] == "-":
+        return f"{d}T23:59:59.999Z" if end_of_day else f"{d}T00:00:00.000Z"
+    return d
+
+
 def _map_task_list(raw: Dict[str, Any]) -> Dict[str, Any]:
     """Map a raw Tasks API task list to a clean response shape."""
     return {
@@ -257,15 +275,15 @@ async def list_tasks(
     if show_assigned is not None:
         params["showAssigned"] = show_assigned
     if completed_max:
-        params["completedMax"] = completed_max
+        params["completedMax"] = _normalize_due(completed_max, end_of_day=True)
     if completed_min:
-        params["completedMin"] = completed_min
+        params["completedMin"] = _normalize_due(completed_min)
     if due_max:
-        params["dueMax"] = due_max
+        params["dueMax"] = _normalize_due(due_max, end_of_day=True)
     if due_min:
-        params["dueMin"] = due_min
+        params["dueMin"] = _normalize_due(due_min)
     if updated_min:
-        params["updatedMin"] = updated_min
+        params["updatedMin"] = _normalize_due(updated_min)
 
     result = await asyncio.to_thread(
         service.tasks().list(**params).execute
@@ -334,7 +352,7 @@ async def create_task(
     if notes:
         body["notes"] = notes
     if due:
-        body["due"] = due
+        body["due"] = _normalize_due(due)
     if status:
         body["status"] = status
 
@@ -383,7 +401,7 @@ async def update_task(
     if status is not None:
         body["status"] = status
     if due is not None:
-        body["due"] = due
+        body["due"] = _normalize_due(due)
 
     if not body:
         return success_response({
