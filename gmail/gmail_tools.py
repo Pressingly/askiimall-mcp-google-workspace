@@ -11,8 +11,10 @@ import ssl
 from pathlib import Path
 from typing import Optional, List, Dict, Literal
 
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+import markdown as markdown_lib
 from pydantic import Field
 
 from auth.service_decorator import require_google_service
@@ -146,6 +148,29 @@ def _extract_headers(payload: dict, header_names: List[str]) -> Dict[str, str]:
     return headers
 
 
+def _build_message_payload(body: str, content_type: str):
+    """
+    Build the MIME payload for an email body.
+
+    Callers that explicitly request ``content_type="html"`` are supplying HTML
+    directly, so it is used verbatim. Otherwise the body is treated as Markdown
+    (which is how the model composes drafts) and rendered into a
+    multipart/alternative message: a plain-text part preserving the original
+    source, plus an HTML part so mail clients display formatting instead of raw
+    ``**bold**``/``#`` markers.
+    """
+    if content_type == "html":
+        return MIMEText(body, "html")
+
+    html_body = markdown_lib.markdown(
+        body, extensions=["extra", "sane_lists", "nl2br"]
+    )
+    payload = MIMEMultipart("alternative")
+    payload.attach(MIMEText(body, "plain"))
+    payload.attach(MIMEText(html_body, "html"))
+    return payload
+
+
 def _prepare_gmail_message(
     subject: str,
     body: str,
@@ -180,7 +205,7 @@ def _prepare_gmail_message(
         reply_subject = f"Re: {subject}"
 
     # Prepare the email
-    message = MIMEText(body, content_type)
+    message = _build_message_payload(body, content_type)
     message["subject"] = reply_subject
 
     # Add recipients if provided
@@ -505,13 +530,13 @@ async def send_gmail_message(
     user_google_email: str = Field(..., description="The user's Google email address."),
     to: str = Field(..., description="Recipient email address."),
     subject: str = Field(..., description="Email subject line."),
-    body: str = Field(..., description="Email body content in plain text format."),
+    body: str = Field(..., description="Email body content. Markdown is supported and automatically rendered to formatted HTML (with a plain-text fallback), so the recipient sees formatting rather than raw markup."),
     cc: Optional[str] = Field(None, description="Optional CC (carbon copy) email address. Multiple addresses can be comma-separated."),
     bcc: Optional[str] = Field(None, description="Optional BCC (blind carbon copy) email address. Multiple addresses can be comma-separated."),
     thread_id: Optional[str] = Field(None, description="Optional Gmail thread ID to reply within. When provided, sends a reply instead of a new email."),
     in_reply_to: Optional[str] = Field(None, description="Optional Message-ID of the message being replied to. Used for proper email threading. Format: '<message-id@domain.com>'."),
     references: Optional[str] = Field(None, description="Optional chain of Message-IDs for proper threading. Should include all previous Message-IDs in the conversation thread, space-separated."),
-    content_type: Literal["plain", "html"] = Field("plain", description="MIME subtype for the email body. Use 'plain' for plain text or 'html' for HTML-formatted emails."),
+    content_type: Literal["plain", "html"] = Field("plain", description="Body format. Leave as 'plain' (default) to have the Markdown body rendered to HTML automatically; use 'html' only to send a raw HTML body verbatim without conversion."),
 ) -> str:
     """
     Sends an email using the user's Gmail account. Supports both new emails and replies.
@@ -582,14 +607,14 @@ async def draft_gmail_message(
     service,
     user_google_email: str = Field(..., description="The user's Google email address."),
     subject: str = Field(..., description="Email subject line."),
-    body: str = Field(..., description="Email body content in plain text format."),
+    body: str = Field(..., description="Email body content. Markdown is supported and automatically rendered to formatted HTML (with a plain-text fallback), so the recipient sees formatting rather than raw markup."),
     to: Optional[str] = Field(None, description="Optional recipient email address. Can be left empty for drafts."),
     cc: Optional[str] = Field(None, description="Optional CC (carbon copy) email address. Multiple addresses can be comma-separated."),
     bcc: Optional[str] = Field(None, description="Optional BCC (blind carbon copy) email address. Multiple addresses can be comma-separated."),
     thread_id: Optional[str] = Field(None, description="Optional Gmail thread ID to reply within. When provided, creates a reply draft."),
     in_reply_to: Optional[str] = Field(None, description="Optional Message-ID of the message being replied to. Used for proper email threading. Format: '<message-id@domain.com>'."),
     references: Optional[str] = Field(None, description="Optional chain of Message-IDs for proper threading. Should include all previous Message-IDs in the conversation thread, space-separated."),
-    content_type: Literal["plain", "html"] = Field("plain", description="MIME subtype for the draft body. Use 'plain' for plain text or 'html' for HTML-formatted drafts."),
+    content_type: Literal["plain", "html"] = Field("plain", description="Body format. Leave as 'plain' (default) to have the Markdown body rendered to HTML automatically; use 'html' only to send a raw HTML body verbatim without conversion."),
 ) -> str:
     """
     Creates a draft email in the user's Gmail account. Supports both new drafts and reply drafts.
