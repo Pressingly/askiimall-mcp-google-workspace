@@ -5,14 +5,12 @@ This module provides MCP tools for interacting with Google Docs API and managing
 """
 import logging
 import asyncio
-import io
 
-from googleapiclient.http import MediaIoBaseDownload
 from pydantic import Field
 
 # Auth & server utilities
 from auth.service_decorator import require_google_service, require_multiple_services
-from core.utils import extract_office_xml_text, handle_http_errors
+from core.utils import handle_http_errors, read_drive_file_text
 from core.server import server
 from core.comments import create_comment_tools
 from core.response import success_response
@@ -227,26 +225,7 @@ async def get_doc_content(
             else drive_service.files().get_media(fileId=document_id)
         )
 
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request_obj)
-        loop = asyncio.get_event_loop()
-        done = False
-        while not done:
-            status, done = await loop.run_in_executor(None, downloader.next_chunk)
-
-        file_content_bytes = fh.getvalue()
-
-        office_text = extract_office_xml_text(file_content_bytes, mime_type)
-        if office_text:
-            body_text = office_text
-        else:
-            try:
-                body_text = file_content_bytes.decode("utf-8")
-            except UnicodeDecodeError:
-                body_text = (
-                    f"[Binary or unsupported text encoding for mimeType '{mime_type}' - "
-                    f"{len(file_content_bytes)} bytes]"
-                )
+        body_text = await read_drive_file_text(request_obj, mime_type)
 
     return success_response({
         "file": {
