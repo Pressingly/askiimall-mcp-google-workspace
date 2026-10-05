@@ -12,6 +12,7 @@ from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.server import server
+from core.tool_annotations import ADDITIVE_WRITE, DESTRUCTIVE_WRITE, READ_ONLY
 from core.utils import handle_http_errors
 from core.response import success_response
 
@@ -98,7 +99,7 @@ def _map_task(raw: Dict[str, Any], compact: bool = False) -> Dict[str, Any]:
     return result
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("list_task_lists", service_type="tasks")
 @require_google_service("tasks", "tasks_read")
 async def list_task_lists(
@@ -137,7 +138,7 @@ async def list_task_lists(
     return success_response(data)
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_task_list", service_type="tasks")
 @require_google_service("tasks", "tasks_read")
 async def get_task_list(
@@ -161,7 +162,7 @@ async def get_task_list(
     return success_response(_map_task_list(task_list))
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("create_task_list", service_type="tasks")
 @require_google_service("tasks", "tasks")
 async def create_task_list(
@@ -185,7 +186,7 @@ async def create_task_list(
     return success_response({"task_list": _map_task_list(result)})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("update_task_list", service_type="tasks")
 @require_google_service("tasks", "tasks")
 async def update_task_list(
@@ -210,7 +211,7 @@ async def update_task_list(
     return success_response({"task_list": _map_task_list(result)})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("delete_task_list", service_type="tasks")
 @require_google_service("tasks", "tasks")
 async def delete_task_list(
@@ -234,7 +235,7 @@ async def delete_task_list(
     return success_response({"deleted": True, "task_list_id": task_list_id})
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("list_tasks", service_type="tasks")
 @require_google_service("tasks", "tasks_read")
 async def list_tasks(
@@ -301,7 +302,7 @@ async def list_tasks(
     return success_response(data)
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_task", service_type="tasks")
 @require_google_service("tasks", "tasks_read")
 async def get_task(
@@ -326,7 +327,7 @@ async def get_task(
     return success_response(_map_task(task, compact=False))
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("create_task", service_type="tasks")
 @require_google_service("tasks", "tasks")
 async def create_task(
@@ -370,7 +371,7 @@ async def create_task(
     return success_response({"task": _map_task(result, compact=False)})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("update_task", service_type="tasks")
 @require_google_service("tasks", "tasks")
 async def update_task(
@@ -418,7 +419,7 @@ async def update_task(
     return success_response({"task": _map_task(result, compact=False)})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("delete_task", service_type="tasks")
 @require_google_service("tasks", "tasks")
 async def delete_task(
@@ -443,7 +444,7 @@ async def delete_task(
     return success_response({"deleted": True, "task_id": task_id})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("move_task", service_type="tasks")
 @require_google_service("tasks", "tasks")
 async def move_task(
@@ -482,7 +483,7 @@ async def move_task(
     return success_response({"task": _map_task(result, compact=False)})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("clear_completed_tasks", service_type="tasks")
 @require_google_service("tasks", "tasks")
 async def clear_completed_tasks(

@@ -18,6 +18,7 @@ from auth.service_decorator import require_google_service
 from core.utils import extract_office_xml_text, handle_http_errors
 from core.response import success_response
 from core.server import server
+from core.tool_annotations import ADDITIVE_WRITE, DESTRUCTIVE_WRITE, READ_ONLY
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ def _build_drive_list_params(
 
 # ─── Read Tools ───────────────────────────────────────────────────────────────
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("search_drive_files", is_read_only=True, service_type="drive")
 @require_google_service("drive", "drive_read")
 async def search_drive_files(
@@ -174,7 +175,7 @@ async def search_drive_files(
     return success_response(data)
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_drive_file_content", is_read_only=True, service_type="drive")
 @require_google_service("drive", "drive_read")
 async def get_drive_file_content(
@@ -263,7 +264,7 @@ async def get_drive_file_content(
     })
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_drive_file_metadata", is_read_only=True, service_type="drive")
 @require_google_service("drive", "drive_read")
 async def get_drive_file_metadata(
@@ -293,7 +294,7 @@ async def get_drive_file_metadata(
     return success_response({"file": _map_file_detailed(file_metadata)})
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("list_drive_items", is_read_only=True, service_type="drive")
 @require_google_service("drive", "drive_read")
 async def list_drive_items(
@@ -343,7 +344,7 @@ async def list_drive_items(
     return success_response(data)
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("list_shared_drives", is_read_only=True, service_type="drive")
 @require_google_service("drive", "drive_read")
 async def list_shared_drives(
@@ -389,7 +390,7 @@ async def list_shared_drives(
 
 # ─── Write Tools ──────────────────────────────────────────────────────────────
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("create_drive_file", service_type="drive")
 @require_google_service("drive", "drive_file")
 async def create_drive_file(
@@ -470,7 +471,7 @@ async def create_drive_file(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("update_drive_file", service_type="drive")
 @require_google_service("drive", "drive_file")
 async def update_drive_file(
@@ -534,7 +535,7 @@ async def update_drive_file(
     })
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("copy_drive_file", service_type="drive")
 @require_google_service("drive", "drive_file")
 async def copy_drive_file(
@@ -578,7 +579,7 @@ async def copy_drive_file(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("move_drive_file", service_type="drive")
 @require_google_service("drive", "drive_full")
 async def move_drive_file(
@@ -625,7 +626,7 @@ async def move_drive_file(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("delete_drive_file", service_type="drive")
 @require_google_service("drive", "drive_full")
 async def delete_drive_file(
@@ -671,7 +672,7 @@ async def delete_drive_file(
         })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("share_drive_file", service_type="drive")
 @require_google_service("drive", "drive_full")
 async def share_drive_file(

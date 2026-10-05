@@ -12,6 +12,7 @@ from googleapiclient.errors import HttpError
 
 from auth.service_decorator import require_google_service, require_multiple_services
 from core.server import server
+from core.tool_annotations import DESTRUCTIVE_WRITE, READ_ONLY
 from core.utils import handle_http_errors
 from core.response import success_response
 
@@ -161,7 +162,7 @@ def _map_member(
     }
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("list_spaces", service_type="chat", is_read_only=True)
 @require_google_service("chat", "chat_read")
 async def list_spaces(
@@ -206,7 +207,7 @@ async def list_spaces(
     return success_response(data)
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_space", service_type="chat", is_read_only=True)
 @require_google_service("chat", "chat_read")
 async def get_space(
@@ -229,7 +230,7 @@ async def get_space(
     return success_response(_map_space(space, compact=False))
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_messages", service_type="chat", is_read_only=True)
 @require_multiple_services([
     {"service_type": "chat", "scopes": "chat_read", "param_name": "chat_service"},
@@ -281,7 +282,7 @@ async def get_messages(
     return success_response(data)
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_message", service_type="chat", is_read_only=True)
 @require_multiple_services([
     {"service_type": "chat", "scopes": "chat_read", "param_name": "chat_service"},
@@ -314,7 +315,7 @@ async def get_message(
     return success_response(_map_chat_message(message, compact=False, sender_name_map=sender_name_map))
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("send_message", service_type="chat")
 @require_google_service("chat", "chat_write")
 async def send_message(
@@ -356,7 +357,7 @@ async def send_message(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("update_message", service_type="chat")
 @require_google_service("chat", "chat_write")
 async def update_message(
@@ -388,7 +389,7 @@ async def update_message(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("delete_message", service_type="chat")
 @require_google_service("chat", "chat_write")
 async def delete_message(
@@ -412,7 +413,7 @@ async def delete_message(
     return success_response({"deleted": True, "message_id": message_id})
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("search_messages", service_type="chat", is_read_only=True)
 @require_multiple_services([
     {"service_type": "chat", "scopes": "chat_read", "param_name": "chat_service"},
@@ -486,7 +487,7 @@ async def search_messages(
     return success_response(data)
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("list_members", service_type="chat", is_read_only=True)
 @require_multiple_services([
     {"service_type": "chat", "scopes": "chat_memberships_read", "param_name": "chat_service"},
@@ -546,7 +547,7 @@ async def list_members(
     return success_response(data)
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("find_direct_message", service_type="chat", is_read_only=True)
 @require_google_service("chat", "chat_spaces")
 async def find_direct_message(

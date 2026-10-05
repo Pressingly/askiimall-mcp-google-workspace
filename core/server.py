@@ -23,6 +23,7 @@ from core.config import (
     set_transport_mode as _set_transport_mode,
     get_oauth_redirect_uri as get_oauth_redirect_uri_for_current_mode,
 )
+from core.tool_annotations import ADDITIVE_WRITE
 
 try:
     from auth.google_remote_auth_provider import GoogleRemoteAuthProvider
@@ -192,7 +193,7 @@ async def oauth2_callback(request: Request) -> HTMLResponse:
         logger.error(f"Error processing OAuth callback: {str(e)}", exc_info=True)
         return create_server_error_response(str(e))
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 async def start_google_auth(
     service_name: str = Field(..., description="Name of the Google service to authenticate (e.g., 'Gmail', 'Google Calendar', 'Google Drive')."),
     user_google_email: str = Field(default=USER_GOOGLE_EMAIL, description="The user's Google email address. If not provided, uses the default from environment configuration.")

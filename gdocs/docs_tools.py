@@ -14,6 +14,7 @@ from pydantic import Field
 from auth.service_decorator import require_google_service, require_multiple_services
 from core.utils import extract_office_xml_text, handle_http_errors
 from core.server import server
+from core.tool_annotations import ADDITIVE_WRITE, DESTRUCTIVE_WRITE, READ_ONLY
 from core.comments import create_comment_tools
 from core.response import success_response
 
@@ -59,7 +60,7 @@ from gdocs.managers import (
 
 logger = logging.getLogger(__name__)
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("search_docs", is_read_only=True, service_type="docs")
 @require_google_service("drive", "drive_read")
 async def search_docs(
@@ -95,7 +96,7 @@ async def search_docs(
     } for f in files]
     return success_response({"documents": mapped, "count": len(mapped)})
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_doc_content", is_read_only=True, service_type="docs")
 @require_multiple_services([
     {"service_type": "drive", "scopes": "drive_read", "param_name": "drive_service"},
@@ -258,7 +259,7 @@ async def get_doc_content(
         "content": body_text,
     })
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("list_docs_in_folder", is_read_only=True, service_type="docs")
 @require_google_service("drive", "drive_read")
 async def list_docs_in_folder(
@@ -291,7 +292,7 @@ async def list_docs_in_folder(
     } for f in items]
     return success_response({"folder_id": folder_id, "documents": mapped, "count": len(mapped)})
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("create_doc", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def create_doc(
@@ -323,7 +324,7 @@ async def create_doc(
     return success_response({"id": doc_id, "title": title, "link": link})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("modify_doc_text", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def modify_doc_text(
@@ -488,7 +489,7 @@ async def modify_doc_text(
         "link": link,
     })
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("find_and_replace_doc", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def find_and_replace_doc(
@@ -532,7 +533,7 @@ async def find_and_replace_doc(
     })
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("insert_doc_elements", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def insert_doc_elements(
@@ -605,7 +606,7 @@ async def insert_doc_elements(
         "link": f"https://docs.google.com/document/d/{document_id}/edit",
     })
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("insert_doc_image", service_type="docs")
 @require_multiple_services([
     {"service_type": "docs", "scopes": "docs_write", "param_name": "docs_service"},
@@ -678,7 +679,7 @@ async def insert_doc_image(
         "link": f"https://docs.google.com/document/d/{document_id}/edit",
     })
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("update_doc_headers_footers", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def update_doc_headers_footers(
@@ -729,7 +730,7 @@ async def update_doc_headers_footers(
     else:
         return f"Error: {message}"
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("batch_update_doc", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def batch_update_doc(
@@ -774,7 +775,7 @@ async def batch_update_doc(
     else:
         return f"Error: {message}"
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("inspect_doc_structure", is_read_only=True, service_type="docs")
 @require_google_service("docs", "docs_read")
 async def inspect_doc_structure(
@@ -885,7 +886,7 @@ async def inspect_doc_structure(
     result["link"] = f"https://docs.google.com/document/d/{document_id}/edit"
     return success_response(result)
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("create_table_with_data", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def create_table_with_data(
@@ -974,7 +975,7 @@ async def create_table_with_data(
         return f"ERROR: {message}"
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("debug_table_structure", is_read_only=True, service_type="docs")
 @require_google_service("docs", "docs_read")
 async def debug_table_structure(
@@ -1056,7 +1057,7 @@ async def debug_table_structure(
     return success_response(debug_info)
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("create_doc_header_footer", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def create_doc_header_footer(
@@ -1097,7 +1098,7 @@ async def create_doc_header_footer(
         return f"Error: {message}"
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("format_doc_paragraph", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def format_doc_paragraph(
@@ -1187,7 +1188,7 @@ async def format_doc_paragraph(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("style_doc_table_cells", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def style_doc_table_cells(
@@ -1262,7 +1263,7 @@ async def style_doc_table_cells(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("modify_doc_table", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def modify_doc_table(
@@ -1350,7 +1351,7 @@ async def modify_doc_table(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("delete_doc_bullets", service_type="docs")
 @require_google_service("docs", "docs_write")
 async def delete_doc_bullets(

@@ -22,6 +22,7 @@ from googleapiclient.errors import HttpError
 
 from auth.service_decorator import require_google_service
 from core.server import server
+from core.tool_annotations import ADDITIVE_WRITE, DESTRUCTIVE_WRITE, READ_ONLY
 from core.utils import handle_http_errors
 from mcp.server.fastmcp.exceptions import ToolError
 from core.response import success_response
@@ -499,7 +500,7 @@ async def _add_single_slide(service, presentation_id: str, title: Optional[str],
 # Presentation Management Tools
 # ---------------------------------------------------------------------------
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("create_presentation", service_type="slides")
 @require_google_service("slides", "slides")
 async def create_presentation(
@@ -630,7 +631,7 @@ FULL PROFESSIONAL DECK EXAMPLE:
     })
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_presentation", is_read_only=True, service_type="slides")
 @require_google_service("slides", "slides_read")
 async def get_presentation(
@@ -675,7 +676,7 @@ async def get_presentation(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("batch_update_presentation", service_type="slides")
 @require_google_service("slides", "slides")
 async def batch_update_presentation(
@@ -994,7 +995,7 @@ async def batch_update_presentation(
     })
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_page", is_read_only=True, service_type="slides")
 @require_google_service("slides", "slides_read")
 async def get_page(
@@ -1066,7 +1067,7 @@ async def get_page(
     })
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_page_thumbnail", is_read_only=True, service_type="slides")
 @require_google_service("slides", "slides_read")
 async def get_page_thumbnail(
@@ -1134,7 +1135,7 @@ async def get_page_thumbnail(
 # A. Slide Content Tools
 # ---------------------------------------------------------------------------
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("add_slide", service_type="slides")
 @require_google_service("slides", "slides")
 async def add_slide(
@@ -1202,7 +1203,7 @@ Not available for TITLE_ONLY and MAIN_POINT layouts."""),
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("update_slide_content", service_type="slides")
 @require_google_service("slides", "slides")
 async def update_slide_content(
@@ -1311,7 +1312,7 @@ async def update_slide_content(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("replace_all_text", service_type="slides")
 @require_google_service("slides", "slides")
 async def replace_all_text(
@@ -1356,7 +1357,7 @@ async def replace_all_text(
 # B. Slide Management Tools
 # ---------------------------------------------------------------------------
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("delete_slide", service_type="slides")
 @require_google_service("slides", "slides")
 async def delete_slide(
@@ -1385,7 +1386,7 @@ async def delete_slide(
     })
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("duplicate_slide", service_type="slides")
 @require_google_service("slides", "slides")
 async def duplicate_slide(
@@ -1419,7 +1420,7 @@ async def duplicate_slide(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("reorder_slides", service_type="slides")
 @require_google_service("slides", "slides")
 async def reorder_slides(
@@ -1456,7 +1457,7 @@ async def reorder_slides(
 # C. Visual Element Tools
 # ---------------------------------------------------------------------------
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("add_slide_image", service_type="slides")
 @require_google_service("slides", "slides")
 async def add_slide_image(
@@ -1526,7 +1527,7 @@ IF THIS TOOL FAILS, recover by:
     })
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("add_slide_shape", service_type="slides")
 @require_google_service("slides", "slides")
 async def add_slide_shape(
@@ -1601,7 +1602,7 @@ async def add_slide_shape(
     })
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("add_slide_line", service_type="slides")
 @require_google_service("slides", "slides")
 async def add_slide_line(
@@ -1661,7 +1662,7 @@ async def add_slide_line(
     })
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("add_slide_table", service_type="slides")
 @require_google_service("slides", "slides")
 async def add_slide_table(
@@ -1753,7 +1754,7 @@ If None, creates an empty table to fill manually."""),
     })
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("add_slide_video", service_type="slides")
 @require_google_service("slides", "slides")
 async def add_slide_video(
@@ -1812,7 +1813,7 @@ async def add_slide_video(
 # D. Styling & Formatting Tools
 # ---------------------------------------------------------------------------
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("format_slide_text", service_type="slides")
 @require_google_service("slides", "slides")
 async def format_slide_text(
@@ -1930,7 +1931,7 @@ async def format_slide_text(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("set_slide_background", service_type="slides")
 @require_google_service("slides", "slides")
 async def set_slide_background(
@@ -1980,7 +1981,7 @@ async def set_slide_background(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("update_shape_properties", service_type="slides")
 @require_google_service("slides", "slides")
 async def update_shape_properties(
@@ -2047,7 +2048,7 @@ async def update_shape_properties(
 # E. Element Manipulation Tools
 # ---------------------------------------------------------------------------
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("transform_element", service_type="slides")
 @require_google_service("slides", "slides")
 async def transform_element(
@@ -2180,7 +2181,7 @@ async def transform_element(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("group_elements", service_type="slides")
 @require_google_service("slides", "slides")
 async def group_elements(
@@ -2213,7 +2214,7 @@ async def group_elements(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("ungroup_elements", service_type="slides")
 @require_google_service("slides", "slides")
 async def ungroup_elements(
@@ -2246,7 +2247,7 @@ async def ungroup_elements(
 # F. Advanced Element Operations
 # ---------------------------------------------------------------------------
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("delete_element", service_type="slides")
 @require_google_service("slides", "slides")
 async def delete_element(
@@ -2275,7 +2276,7 @@ async def delete_element(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("set_element_z_order", service_type="slides")
 @require_google_service("slides", "slides")
 async def set_element_z_order(

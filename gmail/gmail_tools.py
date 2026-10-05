@@ -21,6 +21,7 @@ from auth.service_decorator import require_google_service
 from core.utils import handle_http_errors
 from core.response import success_response, error_response
 from core.server import server
+from core.tool_annotations import ADDITIVE_WRITE, DESTRUCTIVE_WRITE, READ_ONLY
 from auth.scopes import (
     GMAIL_SEND_SCOPE,
     GMAIL_COMPOSE_SCOPE,
@@ -287,7 +288,7 @@ def _map_label(raw: dict) -> Dict:
     }
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("search_gmail_messages", is_read_only=True, service_type="gmail")
 @require_google_service("gmail", "gmail_read")
 async def search_gmail_messages(
@@ -344,7 +345,7 @@ async def search_gmail_messages(
     return success_response(data)
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_gmail_message_content", is_read_only=True, service_type="gmail")
 @require_google_service("gmail", "gmail_read")
 async def get_gmail_message_content(
@@ -380,7 +381,7 @@ async def get_gmail_message_content(
     return success_response(mapped)
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_gmail_messages_content_batch", is_read_only=True, service_type="gmail")
 @require_google_service("gmail", "gmail_read")
 async def get_gmail_messages_content_batch(
@@ -522,7 +523,7 @@ async def get_gmail_messages_content_batch(
     return success_response({"messages": output_messages, "count": len(output_messages)})
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("send_gmail_message", service_type="gmail")
 @require_google_service("gmail", GMAIL_SEND_SCOPE)
 async def send_gmail_message(
@@ -600,7 +601,7 @@ async def send_gmail_message(
     })
 
 
-@server.tool(meta=_GMAIL_DRAFT_UI_META)
+@server.tool(meta=_GMAIL_DRAFT_UI_META, annotations=ADDITIVE_WRITE)
 @handle_http_errors("draft_gmail_message", service_type="gmail")
 @require_google_service("gmail", GMAIL_COMPOSE_SCOPE)
 async def draft_gmail_message(
@@ -690,7 +691,7 @@ def _map_thread(thread_data: dict, thread_id: str) -> Dict:
     }
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_gmail_thread_content", is_read_only=True, service_type="gmail")
 @require_google_service("gmail", "gmail_read")
 async def get_gmail_thread_content(
@@ -715,7 +716,7 @@ async def get_gmail_thread_content(
     return success_response(_map_thread(thread_response, thread_id))
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_gmail_threads_content_batch", is_read_only=True, service_type="gmail")
 @require_google_service("gmail", "gmail_read")
 async def get_gmail_threads_content_batch(
@@ -816,7 +817,7 @@ async def get_gmail_threads_content_batch(
     return success_response({"threads": output_threads, "count": len(output_threads)})
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("list_gmail_labels", is_read_only=True, service_type="gmail")
 @require_google_service("gmail", "gmail_read")
 async def list_gmail_labels(
@@ -839,7 +840,7 @@ async def list_gmail_labels(
     return success_response({"labels": mapped, "count": len(mapped)})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("manage_gmail_label", service_type="gmail")
 @require_google_service("gmail", GMAIL_LABELS_SCOPE)
 async def manage_gmail_label(
@@ -919,7 +920,7 @@ async def manage_gmail_label(
         })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("modify_gmail_message_labels", service_type="gmail")
 @require_google_service("gmail", GMAIL_MODIFY_SCOPE)
 async def modify_gmail_message_labels(
@@ -963,7 +964,7 @@ async def modify_gmail_message_labels(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("batch_modify_gmail_message_labels", service_type="gmail")
 @require_google_service("gmail", GMAIL_MODIFY_SCOPE)
 async def batch_modify_gmail_message_labels(
@@ -1001,7 +1002,7 @@ async def batch_modify_gmail_message_labels(
     return success_response({"modified_count": len(message_ids)})
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("list_gmail_drafts", is_read_only=True, service_type="gmail")
 @require_google_service("gmail", "gmail_read")
 async def list_gmail_drafts(
@@ -1054,7 +1055,7 @@ async def list_gmail_drafts(
     return success_response(data)
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_gmail_profile", is_read_only=True, service_type="gmail")
 @require_google_service("gmail", "gmail_read")
 async def get_gmail_profile(

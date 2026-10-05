@@ -12,6 +12,7 @@ from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.server import server
+from core.tool_annotations import ADDITIVE_WRITE, DESTRUCTIVE_WRITE, READ_ONLY
 from core.utils import handle_http_errors
 from core.response import success_response
 
@@ -79,7 +80,7 @@ def _map_form_response(raw: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("create_form", service_type="forms")
 @require_google_service("forms", "forms")
 async def create_form(
@@ -126,7 +127,7 @@ async def create_form(
     })
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_form", is_read_only=True, service_type="forms")
 @require_google_service("forms", "forms_read")
 async def get_form(
@@ -162,7 +163,7 @@ async def get_form(
     })
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("set_publish_settings", service_type="forms")
 @require_google_service("forms", "forms")
 async def set_publish_settings(
@@ -203,7 +204,7 @@ async def set_publish_settings(
     })
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("add_question", service_type="forms")
 @require_google_service("forms", "forms")
 async def add_question(
@@ -291,7 +292,7 @@ async def add_question(
     })
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("update_form_info", service_type="forms")
 @require_google_service("forms", "forms")
 async def update_form_info(
@@ -324,7 +325,7 @@ async def update_form_info(
     return success_response({"form_id": form_id, "updated": masks})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("update_question", service_type="forms")
 @require_google_service("forms", "forms")
 async def update_question(
@@ -365,7 +366,7 @@ async def update_question(
     return success_response({"form_id": form_id, "index": index, "updated": masks})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("delete_question", service_type="forms")
 @require_google_service("forms", "forms")
 async def delete_question(
@@ -382,7 +383,7 @@ async def delete_question(
     return success_response({"form_id": form_id, "deleted_index": index})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("move_question", service_type="forms")
 @require_google_service("forms", "forms")
 async def move_question(
@@ -402,7 +403,7 @@ async def move_question(
     return success_response({"form_id": form_id, "from_index": from_index, "to_index": to_index})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("set_quiz_settings", service_type="forms")
 @require_google_service("forms", "forms")
 async def set_quiz_settings(
@@ -424,7 +425,7 @@ async def set_quiz_settings(
     return success_response({"form_id": form_id, "is_quiz": is_quiz})
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_form_response", is_read_only=True, service_type="forms")
 @require_google_service("forms", "forms_responses_read")
 async def get_form_response(
@@ -450,7 +451,7 @@ async def get_form_response(
     return success_response(mapped)
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("list_form_responses", is_read_only=True, service_type="forms")
 @require_google_service("forms", "forms_responses_read")
 async def list_form_responses(
