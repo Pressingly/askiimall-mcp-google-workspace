@@ -6,16 +6,22 @@ This module provides MCP tools for interacting with Google Drive API.
 import logging
 import asyncio
 import re
+import tempfile
 from typing import Optional, Dict, Any, Literal
 
-from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload
 import io
-import httpx
 
 from pydantic import Field
 
 from auth.service_decorator import require_google_service
-from core.utils import extract_office_xml_text, handle_http_errors
+from core.utils import (
+    TRANSFER_CHUNK_BYTES,
+    fetch_url_to_file,
+    handle_http_errors,
+    read_drive_file_text,
+    release_memory,
+)
 from core.response import success_response
 from core.server import server
 
@@ -200,7 +206,7 @@ async def get_drive_file_content(
 
     file_metadata = await asyncio.to_thread(
         service.files().get(
-            fileId=file_id, fields="id, name, mimeType, webViewLink", supportsAllDrives=True
+            fileId=file_id, fields="id, name, mimeType, webViewLink, size", supportsAllDrives=True
         ).execute
     )
     mime_type = file_metadata.get("mimeType", "")
@@ -216,41 +222,8 @@ async def get_drive_file_content(
         if export_mime_type
         else service.files().get_media(fileId=file_id)
     )
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request_obj)
-    done = False
-    while not done:
-        status, done = await asyncio.to_thread(downloader.next_chunk)
-
-    file_content_bytes = fh.getvalue()
-
-    # Attempt Office XML extraction only for actual Office XML files
-    office_mime_types = {
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    }
-
-    if mime_type in office_mime_types:
-        office_text = extract_office_xml_text(file_content_bytes, mime_type)
-        if office_text:
-            body_text = office_text
-        else:
-            try:
-                body_text = file_content_bytes.decode("utf-8")
-            except UnicodeDecodeError:
-                body_text = (
-                    f"[Binary or unsupported text encoding for mimeType '{mime_type}' - "
-                    f"{len(file_content_bytes)} bytes]"
-                )
-    else:
-        try:
-            body_text = file_content_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            body_text = (
-                f"[Binary or unsupported text encoding for mimeType '{mime_type}' - "
-                f"{len(file_content_bytes)} bytes]"
-            )
+    size = file_metadata.get("size")
+    body_text = await read_drive_file_text(request_obj, mime_type, int(size) if size else None)
 
     return success_response({
         "file": {
@@ -434,31 +407,31 @@ async def create_drive_file(
             ).execute
         )
     else:
-        file_data = None
-        if fileUrl:
-            logger.info(f"[create_drive_file] Fetching file from URL: {fileUrl}")
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(fileUrl)
-                if resp.status_code != 200:
-                    raise Exception(f"Failed to fetch file from URL: {fileUrl} (status {resp.status_code})")
-                file_data = await resp.aread()
-                content_type = resp.headers.get("Content-Type")
-                if content_type and content_type != "application/octet-stream":
-                    mime_type = content_type
-                    logger.info(f"[create_drive_file] Using MIME type from Content-Type header: {mime_type}")
-        elif content:
-            file_data = content.encode('utf-8')
+        # Stage the body in a temp file and upload it in chunks, so a large fileUrl never sits in RAM.
+        try:
+            with tempfile.TemporaryFile() as media:
+                if fileUrl:
+                    logger.info(f"[create_drive_file] Fetching file from URL: {fileUrl}")
+                    content_type = await fetch_url_to_file(fileUrl, media)
+                    if content_type and content_type != "application/octet-stream":
+                        mime_type = content_type
+                        logger.info(f"[create_drive_file] Using MIME type from Content-Type header: {mime_type}")
+                elif content:
+                    media.write(content.encode('utf-8'))
+                media.seek(0)
 
-        media = io.BytesIO(file_data)
-
-        created_file = await asyncio.to_thread(
-            service.files().create(
-                body=file_metadata,
-                media_body=MediaIoBaseUpload(media, mimetype=mime_type, resumable=True),
-                fields='id, name, webViewLink',
-                supportsAllDrives=True
-            ).execute
-        )
+                created_file = await asyncio.to_thread(
+                    service.files().create(
+                        body=file_metadata,
+                        media_body=MediaIoBaseUpload(
+                            media, mimetype=mime_type, chunksize=TRANSFER_CHUNK_BYTES, resumable=True
+                        ),
+                        fields='id, name, webViewLink',
+                        supportsAllDrives=True
+                    ).execute
+                )
+        finally:
+            release_memory()
 
     logger.info(f"Successfully created file. Link: {created_file.get('webViewLink')}")
     return success_response({
