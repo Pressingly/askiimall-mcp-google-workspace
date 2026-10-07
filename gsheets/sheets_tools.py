@@ -14,6 +14,7 @@ from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.server import server
+from core.tool_annotations import ADDITIVE_WRITE, DESTRUCTIVE_WRITE, READ_ONLY
 from core.utils import handle_http_errors
 from core.response import success_response
 from core.comments import create_comment_tools
@@ -65,7 +66,7 @@ def _map_sheet(raw: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("list_spreadsheets", is_read_only=True, service_type="sheets")
 @require_google_service("drive", "drive_read")
 async def list_spreadsheets(
@@ -103,7 +104,7 @@ async def list_spreadsheets(
     return success_response({"spreadsheets": mapped, "count": len(mapped)})
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_spreadsheet_info", is_read_only=True, service_type="sheets")
 @require_google_service("sheets", "sheets_read")
 async def get_spreadsheet_info(
@@ -151,7 +152,7 @@ async def get_spreadsheet_info(
     )
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("read_sheet_values", is_read_only=True, service_type="sheets")
 @require_google_service("sheets", "sheets_read")
 async def read_sheet_values(
@@ -248,7 +249,7 @@ async def read_sheet_values(
     return success_response(payload)
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("modify_sheet_values", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def modify_sheet_values(
@@ -354,7 +355,7 @@ async def modify_sheet_values(
         )
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("create_spreadsheet", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def create_spreadsheet(
@@ -399,7 +400,7 @@ async def create_spreadsheet(
     )
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("create_sheet", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def create_sheet(
@@ -442,7 +443,7 @@ async def create_sheet(
     )
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("format_sheet_range", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def format_sheet_range(
@@ -646,7 +647,7 @@ async def format_sheet_range(
     )
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("manage_conditional_formatting", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def manage_conditional_formatting(
@@ -976,7 +977,7 @@ async def manage_conditional_formatting(
     )
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("list_sheet_tables", is_read_only=True, service_type="sheets")
 @require_google_service("sheets", "sheets_read")
 async def list_sheet_tables(
@@ -1035,7 +1036,7 @@ async def list_sheet_tables(
     return success_response({"tables": tables, "count": len(tables)})
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("append_table_rows", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def append_table_rows(
@@ -1193,7 +1194,7 @@ def _build_row_visibility_requests(sheet_id, row_nums, hidden, label):
     return reqs
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("resize_sheet_dimensions", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def resize_sheet_dimensions(
@@ -1632,7 +1633,7 @@ async def resize_sheet_dimensions(
     )
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("merge_cells", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def merge_cells(
@@ -1697,7 +1698,7 @@ async def merge_cells(
     )
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("add_data_validation", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def add_data_validation(
@@ -1791,7 +1792,7 @@ async def add_data_validation(
     )
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("manage_named_range", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def manage_named_range(
@@ -1980,7 +1981,7 @@ def _coerce_list(value, what: str):
     return value
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("sort_range", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def sort_range(
@@ -2042,7 +2043,7 @@ async def sort_range(
     )
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("set_basic_filter", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def set_basic_filter(
@@ -2103,7 +2104,7 @@ async def set_basic_filter(
 _BORDER_STYLES = {"DOTTED", "DASHED", "SOLID", "SOLID_MEDIUM", "SOLID_THICK", "NONE", "DOUBLE"}
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("update_borders", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def update_borders(
@@ -2183,7 +2184,7 @@ async def update_borders(
     )
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("manage_protected_range", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def manage_protected_range(
@@ -2280,7 +2281,7 @@ async def manage_protected_range(
     )
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("add_chart", service_type="sheets")
 @require_google_service("sheets", "sheets_write")
 async def add_chart(

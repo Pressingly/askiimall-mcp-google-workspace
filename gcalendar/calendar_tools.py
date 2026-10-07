@@ -21,6 +21,7 @@ from core.utils import handle_http_errors
 from core.response import success_response
 
 from core.server import server
+from core.tool_annotations import ADDITIVE_WRITE, DESTRUCTIVE_WRITE, READ_ONLY
 
 
 # Configure module logger
@@ -262,7 +263,7 @@ def _correct_time_format_for_api(
     return time_str
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("list_calendars", is_read_only=True, service_type="calendar")
 @require_google_service("calendar", "calendar_read")
 async def list_calendars(
@@ -297,7 +298,7 @@ async def list_calendars(
     return success_response(response_data)
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_events", is_read_only=True, service_type="calendar")
 @require_google_service("calendar", "calendar_read")
 async def get_events(
@@ -397,7 +398,7 @@ async def get_events(
     return success_response(response_data)
 
 
-@server.tool()
+@server.tool(annotations=ADDITIVE_WRITE)
 @handle_http_errors("create_event", service_type="calendar")
 @require_google_service("calendar", "calendar_events")
 async def create_event(
@@ -557,7 +558,7 @@ async def create_event(
     return success_response({"event": mapped})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("modify_event", service_type="calendar")
 @require_google_service("calendar", "calendar_events")
 async def modify_event(
@@ -746,7 +747,7 @@ async def modify_event(
     return success_response({"event": mapped})
 
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("delete_event", service_type="calendar")
 @require_google_service("calendar", "calendar_events")
 async def delete_event(
@@ -803,7 +804,7 @@ async def delete_event(
     return success_response({"deleted": True, "event_id": event_id})
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_event", is_read_only=True, service_type="calendar")
 @require_google_service("calendar", "calendar_read")
 async def get_event(
@@ -920,7 +921,7 @@ def _find_free_slots(
 # New tool: respond_to_event
 # ---------------------------------------------------------------------------
 
-@server.tool()
+@server.tool(annotations=DESTRUCTIVE_WRITE)
 @handle_http_errors("respond_to_event", service_type="calendar")
 @require_google_service("calendar", "calendar_events")
 async def respond_to_event(
@@ -987,7 +988,7 @@ async def respond_to_event(
 # New tool: find_my_free_time
 # ---------------------------------------------------------------------------
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("find_my_free_time", is_read_only=True, service_type="calendar")
 @require_google_service("calendar", "calendar_read")
 async def find_my_free_time(
@@ -1049,7 +1050,7 @@ async def find_my_free_time(
 # New tool: find_meeting_times
 # ---------------------------------------------------------------------------
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("find_meeting_times", is_read_only=True, service_type="calendar")
 @require_google_service("calendar", "calendar_read")
 async def find_meeting_times(

@@ -12,6 +12,7 @@ from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.server import server
+from core.tool_annotations import ADDITIVE_WRITE, DESTRUCTIVE_WRITE, READ_ONLY
 from core.utils import handle_http_errors
 from core.response import success_response
 
@@ -136,10 +137,10 @@ def create_comment_tools(app_name: str, file_id_param: str):
     resolve_comment.__name__ = resolve_func_name
 
     # Register tools with the server using the proper names
-    server.tool()(read_comments)
-    server.tool()(create_comment)
-    server.tool()(reply_to_comment)
-    server.tool()(resolve_comment)
+    server.tool(annotations=READ_ONLY)(read_comments)
+    server.tool(annotations=ADDITIVE_WRITE)(create_comment)
+    server.tool(annotations=ADDITIVE_WRITE)(reply_to_comment)
+    server.tool(annotations=DESTRUCTIVE_WRITE)(resolve_comment)
 
     return {
         'read_comments': read_comments,

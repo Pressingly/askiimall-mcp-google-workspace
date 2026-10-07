@@ -13,6 +13,7 @@ from pydantic import Field
 
 from auth.service_decorator import require_google_service
 from core.server import server
+from core.tool_annotations import READ_ONLY
 from core.utils import handle_http_errors
 from core.response import success_response
 
@@ -36,7 +37,7 @@ def _map_search_result(item: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("search_custom", is_read_only=True, service_type="customsearch")
 @require_google_service("customsearch", "customsearch")
 async def search_custom(
@@ -124,7 +125,7 @@ async def search_custom(
     })
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("get_search_engine_info", is_read_only=True, service_type="customsearch")
 @require_google_service("customsearch", "customsearch")
 async def get_search_engine_info(
@@ -184,7 +185,7 @@ async def get_search_engine_info(
     })
 
 
-@server.tool()
+@server.tool(annotations=READ_ONLY)
 @handle_http_errors("search_custom_siterestrict", is_read_only=True, service_type="customsearch")
 @require_google_service("customsearch", "customsearch")
 async def search_custom_siterestrict(
